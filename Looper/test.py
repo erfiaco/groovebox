@@ -15,8 +15,9 @@ lcd = LCD.LCD_I2C()
 os.environ["GPIOZERO_PIN_FACTORY"] = "rpigpio"
 
 # ===== CONFIGURACION =====
+CHUNK=2048
 sample_rate = 44100
-channels = 2
+channels = 1
 mute = False
 grabando = False
 reproduciendo = False
