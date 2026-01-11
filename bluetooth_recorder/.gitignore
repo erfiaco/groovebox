@@ -1,0 +1,7 @@
+/Delete/
+__pyache__/
+*.pyc
+*.pyco
+*.pyd
+*.pyo
+/bt_recorder_env/
