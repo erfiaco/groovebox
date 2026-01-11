@@ -28,6 +28,8 @@ class BluetoothRecorder:
         self.tiempo_inicio = None
         self.archivo_actual = None
         self.proceso_arecord = None
+        self.proceso_audio_live = None  # Para bluealsa-aplay (audio en vivo)
+        self.device_mac = None  # MAC del dispositivo Bluetooth conectado
         
         # Para incremento variable
         self.tiempo_pulsado_inicio = None
@@ -45,20 +47,27 @@ class BluetoothRecorder:
             self.font = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
         
-        # Botones: GPIO26 (bajar), GPIO6 (subir), GPIO5 (START)
+        # Botones: GPIO26 (bajar), GPIO6 (subir), GPIO5 (START), GPIO13 (salir con pulsación larga)
         time.sleep(1.2)
         self.btn_bajar = Button(26, pull_up=True, bounce_time=0.03)
         self.btn_subir = Button(6, pull_up=True, bounce_time=0.03)
         self.btn_start = Button(5, pull_up=True, bounce_time=0.03)
+        self.btn_salir = Button(13, pull_up=True, bounce_time=0.03)
         
         self.btn_bajar.when_pressed = self.on_bajar_pressed
         self.btn_bajar.when_released = self.on_button_released
         self.btn_subir.when_pressed = self.on_subir_pressed
         self.btn_subir.when_released = self.on_button_released
         self.btn_start.when_pressed = self.on_start_pressed
+        self.btn_salir.when_pressed = self.on_salir_pressed
+        self.btn_salir.when_released = self.on_salir_released
         
         # Thread para incremento continuo
         self.boton_presionado = None  # 'subir' o 'bajar'
+        
+        # Para salir con pulsación larga
+        self.salir_presionado_inicio = None
+        self.debe_salir = False
         
     def mostrar_pantalla(self, mensaje1, mensaje2="", mensaje3=""):
         """Muestra estado en el OLED"""
@@ -90,7 +99,7 @@ class BluetoothRecorder:
         self.mostrar_pantalla(
             "🎙️ BT Recorder",
             f"Duración: {tiempo_str}",
-            "26:↓ 6:↑ 5:OK"
+            "26:↓ 6:↑ 5:OK 13:Exit"
         )
     
     def on_bajar_pressed(self):
@@ -155,6 +164,31 @@ class BluetoothRecorder:
             print(f"\n▶️  Iniciando grabación de {self.formatear_tiempo(self.duracion_seg)}...")
             self.iniciar_grabacion()
     
+    def on_salir_pressed(self):
+        """Detecta inicio de pulsación del botón salir"""
+        if not self.grabando:  # Solo funciona si no está grabando
+            self.salir_presionado_inicio = time.time()
+            Thread(target=self.detectar_pulsacion_larga_salir, daemon=True).start()
+    
+    def on_salir_released(self):
+        """Cancela detección de pulsación larga si se suelta antes de 3 seg"""
+        self.salir_presionado_inicio = None
+    
+    def detectar_pulsacion_larga_salir(self):
+        """Thread que detecta si el botón se mantiene presionado 3 segundos"""
+        inicio = self.salir_presionado_inicio
+        if inicio is None:
+            return
+        
+        time.sleep(3)  # Esperar 3 segundos
+        
+        # Si todavía está presionado después de 3 seg
+        if self.salir_presionado_inicio == inicio:
+            print("\n🚪 Pulsación larga detectada → Saliendo...")
+            self.mostrar_pantalla("SALIENDO...", "Volviendo al", "boot menu")
+            self.debe_salir = True
+            time.sleep(1)
+    
     def actualizar_tiempo_grabacion(self):
         """Thread que actualiza el display durante la grabación"""
         # Esperar a que el proceso esté listo
@@ -199,9 +233,22 @@ class BluetoothRecorder:
         if self.grabando:
             return
         
+        # IMPORTANTE: Parar audio en vivo durante la grabación
+        # (bluealsa-aplay y arecord no pueden leer el mismo stream simultáneamente)
+        if self.proceso_audio_live:
+            print("🔇 Pausando audio en vivo para grabar...")
+            try:
+                self.proceso_audio_live.terminate()
+                self.proceso_audio_live.wait(timeout=1)
+            except:
+                pass
+            self.proceso_audio_live = None
+            time.sleep(0.3)  # Dar tiempo a que se libere el stream
+        
         # Detectar dispositivo bluealsa
         print("📡 Detectando dispositivo Bluetooth...")
         device = None
+        device_mac = None
         try:
             result = subprocess.run(
                 ['bluealsa-aplay', '-L'],
@@ -211,6 +258,9 @@ class BluetoothRecorder:
             for line in result.stdout.split('\n'):
                 if 'DEV=' in line and 'PROFILE=a2dp' in line:
                     device = line.strip()
+                    # Extraer MAC
+                    if 'DEV=' in device:
+                        device_mac = device.split('DEV=')[1].split(',')[0]
                     print(f"✅ Encontrado: {device}")
                     break
             
@@ -293,9 +343,35 @@ class BluetoothRecorder:
         finally:
             self.grabando = False
             self.proceso_arecord = None
+            
+            # Reanudar audio en vivo
+            if device_mac:
+                print("🔊 Reanudando audio en vivo...")
+                try:
+                    self.proceso_audio_live = subprocess.Popen(
+                        ['bluealsa-aplay', device_mac],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    time.sleep(0.5)  # Dar tiempo a que se estabilice
+                except Exception as e:
+                    print(f"⚠️  No se pudo reanudar audio: {e}")
     
     def cleanup(self):
         """Limpieza al salir"""
+        # Parar audio en vivo
+        if self.proceso_audio_live:
+            try:
+                print("🔇 Deteniendo audio en vivo...")
+                self.proceso_audio_live.terminate()
+                self.proceso_audio_live.wait(timeout=2)
+            except:
+                try:
+                    self.proceso_audio_live.kill()
+                except:
+                    pass
+        
+        # Parar grabación si está activa
         if self.proceso_arecord:
             try:
                 self.proceso_arecord.terminate()
@@ -310,6 +386,7 @@ class BluetoothRecorder:
             self.btn_bajar.close()
             self.btn_subir.close()
             self.btn_start.close()
+            self.btn_salir.close()
         except:
             pass
         
@@ -324,20 +401,63 @@ class BluetoothRecorder:
         print(f"📁 {self.output_dir}")
         print("="*50 + "\n")
         
+        # Detectar y activar audio en vivo por RCA
+        print("🔊 Activando audio Bluetooth → RCA...")
+        try:
+            result = subprocess.run(
+                ['bluealsa-aplay', '-L'],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            device = None
+            for line in result.stdout.split('\n'):
+                if 'DEV=' in line and 'PROFILE=a2dp' in line:
+                    device = line.strip()
+                    break
+            
+            if device:
+                # Extraer solo la MAC del device string
+                mac = None
+                if 'DEV=' in device:
+                    mac = device.split('DEV=')[1].split(',')[0]
+                
+                if mac:
+                    self.device_mac = mac  # Guardar para reanudar después
+                    # Lanzar bluealsa-aplay para audio en vivo
+                    self.proceso_audio_live = subprocess.Popen(
+                        ['bluealsa-aplay', mac],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    print(f"✅ Audio en vivo activado ({mac})")
+                else:
+                    print("⚠️  No se pudo extraer MAC, audio en vivo desactivado")
+            else:
+                print("⚠️  Dispositivo Bluetooth no conectado")
+                print("   Audio en vivo no disponible")
+        except Exception as e:
+            print(f"⚠️  Audio en vivo no disponible: {e}")
+        
+        print()
+        
         self.actualizar_display_duracion()
         
         print("🎵 Conecta móvil y reproduce música")
         print("⏱️  Ajusta: GPIO26(↓) GPIO6(↑)")
-        print("▶️  Inicia: GPIO5\n")
+        print("▶️  Inicia: GPIO5")
+        print("🚪 Salir: GPIO13 (mantener 3 seg)\n")
         
         try:
-            # Esperar inicio
-            while not self.grabando:
+            # Esperar inicio de grabación o señal de salida
+            while not self.grabando and not self.debe_salir:
                 time.sleep(0.1)
             
-            # Esperar fin
-            while self.grabando:
-                time.sleep(0.1)
+            # Si debe salir, no esperar a grabar
+            if not self.debe_salir:
+                # Esperar fin de grabación
+                while self.grabando:
+                    time.sleep(0.1)
                 
         except KeyboardInterrupt:
             print("\n🛑 Interrumpido")
