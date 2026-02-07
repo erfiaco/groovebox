@@ -49,10 +49,10 @@ class BluetoothRecorder:
         
         # Botones: GPIO26 (bajar), GPIO6 (subir), GPIO5 (START), GPIO13 (salir con pulsación larga)
         time.sleep(1.2)
-        self.btn_bajar = Button(26, pull_up=True, bounce_time=0.03)
-        self.btn_subir = Button(6, pull_up=True, bounce_time=0.03)
-        self.btn_start = Button(5, pull_up=True, bounce_time=0.03)
-        self.btn_salir = Button(13, pull_up=True, bounce_time=0.03)
+        self.btn_bajar = Button(22, pull_up=True, bounce_time=0.03)
+        self.btn_subir = Button(9, pull_up=True, bounce_time=0.03)
+        self.btn_start = Button(13, pull_up=True, bounce_time=0.03)
+        self.btn_salir = Button(5, pull_up=True, bounce_time=0.03)
         
         self.btn_bajar.when_pressed = self.on_bajar_pressed
         self.btn_bajar.when_released = self.on_button_released
