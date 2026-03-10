@@ -38,7 +38,8 @@ def _generate_tone(freq: float, duration: float, sample_rate: int,
     return tone
 
 
-def _load_or_generate(path: str | None, freq: float) -> np.ndarray:
+def _load_or_generate(path, freq):
+
     """
     Intenta cargar WAV en `path`.
     Si no existe o falla, genera un tono sine.
@@ -81,7 +82,7 @@ class Metronome:
     def __init__(self,
                  bpm: int = 60,
                  beats_per_bar: int = 4,
-                 sounds_dir: str | None = None):
+                 sounds_dir=None):
 
         self.bpm           = bpm
         self.beats_per_bar = beats_per_bar
@@ -108,8 +109,7 @@ class Metronome:
 
     # ── API pública ────────────────────────────────────────────────────────
 
-    def load_sounds(self, accent_path: str | None = None,
-                    beat_path: str | None = None):
+    def load_sounds(self, accent_path=None, beat_path=None):
         """Recarga sonidos en caliente (efecto al próximo beat)."""
         if accent_path:
             self._accent = _load_or_generate(accent_path, ACCENT_FREQ)
