@@ -27,6 +27,8 @@ import threading
 from metronome      import Metronome
 from buttons_manager import ButtonsManager
 from oled_display   import OledDisplay
+import sounddevice as sd
+sd.default.device = 0
 
 # ── Configuración inicial ────────────────────────────────────────────────────
 
@@ -57,6 +59,7 @@ class MetronomeApp:
         self.buttons.on_start_stop   = self._on_start_stop
         self.buttons.on_tempo_change = self._on_tempo_change
         self.buttons.on_time_sig     = self._on_time_sig
+        self.buttons.on_exit         = self._on_exit
 
         # Conectar callback de beat (para posibles usos futuros)
         self.metro.on_beat = self._on_beat
@@ -107,6 +110,10 @@ class MetronomeApp:
         En el futuro: pulso visual, resaltar beat, etc.
         """
         pass
+    
+    def _on_exit(self):
+        print("[Metro] Saliendo al boot menu...")
+        raise SystemExit(0)
 
     # ── Transiciones de estado ────────────────────────────────────────────
 

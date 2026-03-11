@@ -56,11 +56,13 @@ class ButtonsManager:
         self._btn_up     = Button(PIN_TEMPO_UP,   pull_up=True, bounce_time=0.03)
         self._btn_3_4    = Button(PIN_TIME_3_4,   pull_up=True, bounce_time=0.05)
         self._btn_4_4    = Button(PIN_TIME_4_4,   pull_up=True, bounce_time=0.05)
+        self._btn_exit = Button(5, pull_up=True, bounce_time=0.04, hold_time=3.0)
 
         # ── Callbacks públicos ───────────────────────────────────────────────
         self.on_start_stop   = None   # fn()
         self.on_tempo_change = None   # fn(delta: int)
         self.on_time_sig     = None   # fn(beats: int)
+        self.on_exit = None
 
         # ── Estado interno de hold ────────────────────────────────────────────
         self._dn_held        = False
@@ -76,6 +78,7 @@ class ButtonsManager:
         self._btn_up.when_released    = self._on_up_release
         self._btn_3_4.when_pressed    = lambda: self._call(self.on_time_sig, 3)
         self._btn_4_4.when_pressed    = lambda: self._call(self.on_time_sig, 4)
+        self._btn_exit.when_held      = lambda: self._call(self.on_exit)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -156,6 +159,7 @@ class ButtonsManager:
         self._dn_held = False
         self._up_held = False
         try:
+            self._btn_exit.close()
             self._btn_start.close()
             self._btn_dn.close()
             self._btn_up.close()
