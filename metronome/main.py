@@ -23,6 +23,7 @@ import sys
 import signal
 import time
 import threading
+import os
 
 from metronome      import Metronome
 from buttons_manager import ButtonsManager
@@ -49,6 +50,7 @@ class MetronomeApp:
     def __init__(self):
         self._state = "STOPPED"   # "STOPPED" | "PLAYING"
         self._lock  = threading.Lock()
+        self._exit_event = threading.Event()
 
         # Componentes
         self.metro   = Metronome(bpm=DEFAULT_BPM, beats_per_bar=DEFAULT_BEATS)
@@ -113,7 +115,7 @@ class MetronomeApp:
     
     def _on_exit(self):
         print("[Metro] Saliendo al boot menu...")
-        raise SystemExit(0)
+        self._exit_event.set()
 
     # ── Transiciones de estado ────────────────────────────────────────────
 
@@ -150,9 +152,11 @@ class MetronomeApp:
         print(f"[Metro] Listo — {DEFAULT_BPM} BPM, {DEFAULT_BEATS}/4")
         print("[Metro] GPIO 6 = start/stop | 26 = BPM- | 13 = BPM+ | 9 = 3/4 | 22 = 4/4")
 
+        
+        
         try:
-            while True:
-                time.sleep(0.1)
+            while not self._exit_event.wait(0.1):
+                pass
         except (KeyboardInterrupt, SystemExit):
             pass
         finally:
@@ -165,6 +169,11 @@ class MetronomeApp:
         self.buttons.close()
         self.display.clear()
         print("[Metro] Cerrado limpiamente.")
+        
+        # Volver al boot menu
+        import subprocess
+        subprocess.Popen(["/usr/bin/python3", "/home/Javo/Proyects/boot_menu/boot_menu.py"])
+
 
     def _signal_handler(self, signum, frame):
         print(f"[Metro] Señal {signum} recibida — saliendo.")
