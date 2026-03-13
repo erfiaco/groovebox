@@ -3,18 +3,15 @@
 ButtonsManager para el metrónomo.
 
 GPIO asignados:
-    GPIO 6   → start / stop (tap)
-    GPIO 26  → tempo down   (tap + hold progresivo)
-    GPIO 13  → tempo up     (tap + hold progresivo)
-    GPIO 9   → compás 3/4   (tap)
-    GPIO 22  → compás 4/4   (tap)
+    GPIO 6   → play tap / menú Compás (hold 1.5s)
+    GPIO 5   → back tap / salir al boot menu (hold 3s)
+    GPIO 25  → abrir menú Modos / seleccionar en menús
+    GPIO 9   → navegar abajo / decrementar valor
+    GPIO 22  → navegar arriba / incrementar valor
+    GPIO 26  → tempo down (tap + hold progresivo)
+    GPIO 13  → tempo up   (tap + hold progresivo)
 
-Comportamiento hold progresivo (igual que Practice Player):
-    tap            → ±1 bpm, una vez
-    hold < 1.5 s   → ±1 bpm cada 150 ms (continuo)
-    hold ≥ 1.5 s   → ±10 bpm cada 150 ms (continuo)
-
-Usa gpiozero con LGPIOFactory (compatible con el resto del sistema).
+El significado concreto de cada callback lo decide main.py según el estado.
 """
 
 import time
@@ -25,62 +22,87 @@ from gpiozero.pins.lgpio import LGPIOFactory
 Device.pin_factory = LGPIOFactory()
 
 # ── Pines ─────────────────────────────────────────────────────────────────────
-PIN_START_STOP = 6
-PIN_TEMPO_DN   = 26
-PIN_TEMPO_UP   = 13
-PIN_TIME_3_4   = 9
-PIN_TIME_4_4   = 22
+PIN_PLAY      = 6
+PIN_BACK      = 5
+PIN_MENU      = 25
+PIN_NAV_DOWN  = 22
+PIN_NAV_UP    = 9
+PIN_TEMPO_DN  = 26
+PIN_TEMPO_UP  = 13
 
-# ── Parámetros del hold progresivo ────────────────────────────────────────────
-HOLD_INITIAL_DELAY = 0.30   # s antes de empezar a repetir
-HOLD_REPEAT_MS     = 0.15   # s entre repeticiones
-HOLD_FAST_THRESH   = 1.5    # s de hold para pasar a ±10
-DELTA_SLOW         = 1      # bpm por tick en modo lento
-DELTA_FAST         = 10     # bpm por tick en modo rápido
+# ── Tiempos de hold ───────────────────────────────────────────────────────────
+PLAY_HOLD_TIME = 1.5   # s → menú Compás
+BACK_HOLD_TIME = 3.0   # s → boot menu
+
+# ── Hold progresivo de tempo ──────────────────────────────────────────────────
+HOLD_INITIAL_DELAY = 0.30
+HOLD_REPEAT_MS     = 0.15
+HOLD_FAST_THRESH   = 1.5
+DELTA_SLOW         = 1
+DELTA_FAST         = 10
 
 
 class ButtonsManager:
     """
-    Gestiona los 5 botones del metrónomo.
+    Callbacks públicos — asignar desde main.py:
 
-    Callbacks que hay que asignar desde main.py:
-        bm.on_start_stop  = fn()
-        bm.on_tempo_change = fn(delta: int)   # delta = +1 / -1 / +10 / -10
-        bm.on_time_sig    = fn(beats: int)    # 3 o 4
+        on_play_tap      fn()       GPIO 6 tap
+        on_play_hold     fn()       GPIO 6 hold 1.5s  → ir a Compás
+        on_back          fn()       GPIO 5 tap         → volver / cancelar
+        on_exit          fn()       GPIO 5 hold 3s     → boot menu
+        on_menu          fn()       GPIO 25 tap        → abrir Modos / seleccionar
+        on_nav_down      fn()       GPIO 9             → cursor abajo / valor baja
+        on_nav_up        fn()       GPIO 22            → cursor arriba / valor sube
+        on_tempo_change  fn(delta)  GPIO 26/13         → ±bpm
     """
 
     def __init__(self):
         # ── Botones ──────────────────────────────────────────────────────────
-        self._btn_start  = Button(PIN_START_STOP, pull_up=True, bounce_time=0.04)
-        self._btn_dn     = Button(PIN_TEMPO_DN,   pull_up=True, bounce_time=0.03)
-        self._btn_up     = Button(PIN_TEMPO_UP,   pull_up=True, bounce_time=0.03)
-        self._btn_3_4    = Button(PIN_TIME_3_4,   pull_up=True, bounce_time=0.05)
-        self._btn_4_4    = Button(PIN_TIME_4_4,   pull_up=True, bounce_time=0.05)
-        self._btn_exit = Button(5, pull_up=True, bounce_time=0.04, hold_time=3.0)
+        self._btn_play  = Button(PIN_PLAY,     pull_up=True, bounce_time=0.04,
+                                 hold_time=PLAY_HOLD_TIME)
+        self._btn_back  = Button(PIN_BACK,     pull_up=True, bounce_time=0.04,
+                                 hold_time=BACK_HOLD_TIME)
+        self._btn_menu  = Button(PIN_MENU,     pull_up=True, bounce_time=0.04)
+        self._btn_ndown = Button(PIN_NAV_DOWN, pull_up=True, bounce_time=0.04)
+        self._btn_nup   = Button(PIN_NAV_UP,   pull_up=True, bounce_time=0.04)
+        self._btn_dn    = Button(PIN_TEMPO_DN, pull_up=True, bounce_time=0.03)
+        self._btn_up    = Button(PIN_TEMPO_UP, pull_up=True, bounce_time=0.03)
 
         # ── Callbacks públicos ───────────────────────────────────────────────
-        self.on_start_stop   = None   # fn()
-        self.on_tempo_change = None   # fn(delta: int)
-        self.on_time_sig     = None   # fn(beats: int)
-        self.on_exit = None
+        self.on_play_tap     = None
+        self.on_play_hold    = None
+        self.on_back         = None
+        self.on_exit         = None
+        self.on_menu         = None
+        self.on_nav_down     = None
+        self.on_nav_up       = None
+        self.on_tempo_change = None
 
-        # ── Estado interno de hold ────────────────────────────────────────────
-        self._dn_held        = False
-        self._up_held        = False
-        self._dn_thread      = None
-        self._up_thread      = None
+        # ── Estado interno ────────────────────────────────────────────────────
+        self._play_held = False
+        self._back_held = False
+        self._dn_held   = False
+        self._up_held   = False
 
         # ── Conectar handlers ────────────────────────────────────────────────
-        self._btn_start.when_pressed  = self._on_start_stop
-        self._btn_dn.when_pressed     = self._on_dn_press
-        self._btn_dn.when_released    = self._on_dn_release
-        self._btn_up.when_pressed     = self._on_up_press
-        self._btn_up.when_released    = self._on_up_release
-        self._btn_3_4.when_pressed    = lambda: self._call(self.on_time_sig, 3)
-        self._btn_4_4.when_pressed    = lambda: self._call(self.on_time_sig, 4)
-        self._btn_exit.when_held      = lambda: self._call(self.on_exit)
+        self._btn_play.when_pressed  = self._on_play_press
+        self._btn_play.when_held     = self._on_play_held
+        self._btn_play.when_released = self._on_play_release
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+        self._btn_back.when_pressed  = self._on_back_press
+        self._btn_back.when_held     = self._on_back_held
+        self._btn_back.when_released = self._on_back_release
+
+        self._btn_menu.when_pressed  = lambda: self._call(self.on_menu)
+        self._btn_ndown.when_pressed = lambda: self._call(self.on_nav_down)
+        self._btn_nup.when_pressed   = lambda: self._call(self.on_nav_up)
+
+        self._btn_dn.when_pressed    = self._on_dn_press
+        self._btn_dn.when_released   = self._on_dn_release
+        self._btn_up.when_pressed    = self._on_up_press
+        self._btn_up.when_released   = self._on_up_release
+
+    # ── Helper ────────────────────────────────────────────────────────────────
 
     def _call(self, fn, *args):
         if fn:
@@ -89,81 +111,84 @@ class ButtonsManager:
             except Exception as e:
                 print(f"[Buttons] callback error: {e}")
 
-    # ── Start/Stop ────────────────────────────────────────────────────────────
+    # ── GPIO 6: play tap / hold ───────────────────────────────────────────────
 
-    def _on_start_stop(self):
-        self._call(self.on_start_stop)
+    def _on_play_press(self):
+        self._play_held = False
 
-    # ── Tempo DOWN ────────────────────────────────────────────────────────────
+    def _on_play_held(self):
+        self._play_held = True
+        self._call(self.on_play_hold)
+
+    def _on_play_release(self):
+        if not self._play_held:
+            self._call(self.on_play_tap)
+
+    # ── GPIO 5: back tap / exit hold ─────────────────────────────────────────
+
+    def _on_back_press(self):
+        self._back_held = False
+
+    def _on_back_held(self):
+        self._back_held = True
+        self._call(self.on_exit)
+
+    def _on_back_release(self):
+        if not self._back_held:
+            self._call(self.on_back)
+
+    # ── GPIO 26: tempo down con hold progresivo ───────────────────────────────
 
     def _on_dn_press(self):
-        # Tap inmediato
         self._call(self.on_tempo_change, -DELTA_SLOW)
-        # Arrancar thread de hold
         self._dn_held = True
-        self._dn_thread = threading.Thread(
-            target=self._hold_worker,
-            args=(lambda: self._dn_held, -1),
-            daemon=True
-        )
-        self._dn_thread.start()
+        threading.Thread(target=self._hold_worker,
+                         args=(lambda: self._dn_held, -1),
+                         daemon=True).start()
 
     def _on_dn_release(self):
         self._dn_held = False
 
-    # ── Tempo UP ──────────────────────────────────────────────────────────────
+    # ── GPIO 13: tempo up con hold progresivo ─────────────────────────────────
 
     def _on_up_press(self):
         self._call(self.on_tempo_change, +DELTA_SLOW)
         self._up_held = True
-        self._up_thread = threading.Thread(
-            target=self._hold_worker,
-            args=(lambda: self._up_held, +1),
-            daemon=True
-        )
-        self._up_thread.start()
+        threading.Thread(target=self._hold_worker,
+                         args=(lambda: self._up_held, +1),
+                         daemon=True).start()
 
     def _on_up_release(self):
         self._up_held = False
 
-    # ── Worker de hold progresivo ─────────────────────────────────────────────
+    # ── Worker hold progresivo ────────────────────────────────────────────────
 
-    def _hold_worker(self, is_held_fn, direction: int):
-        """
-        Espera HOLD_INITIAL_DELAY, luego envía deltas de forma continua.
-        direction: +1 (up) o -1 (down)
-        """
-        # Esperar antes de empezar a repetir
+    def _hold_worker(self, is_held_fn, direction):
         t_start = time.monotonic()
         end_time = t_start + HOLD_INITIAL_DELAY
-
         while time.monotonic() < end_time:
             if not is_held_fn():
                 return
             time.sleep(0.01)
-
-        # Loop de repetición
         while is_held_fn():
             elapsed = time.monotonic() - t_start
-            if elapsed >= HOLD_FAST_THRESH:
-                delta = direction * DELTA_FAST
-            else:
-                delta = direction * DELTA_SLOW
+            delta = direction * (DELTA_FAST if elapsed >= HOLD_FAST_THRESH
+                                 else DELTA_SLOW)
             self._call(self.on_tempo_change, delta)
             time.sleep(HOLD_REPEAT_MS)
 
     # ── Cierre limpio ─────────────────────────────────────────────────────────
 
     def close(self):
-        """Libera recursos. Llamar al salir."""
         self._dn_held = False
         self._up_held = False
         try:
-            self._btn_exit.close()
-            self._btn_start.close()
+            self._btn_play.close()
+            self._btn_back.close()
+            self._btn_menu.close()
+            self._btn_ndown.close()
+            self._btn_nup.close()
             self._btn_dn.close()
             self._btn_up.close()
-            self._btn_3_4.close()
-            self._btn_4_4.close()
         except Exception as e:
             print(f"[Buttons] close error: {e}")

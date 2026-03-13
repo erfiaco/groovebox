@@ -1,3 +1,7 @@
 metronome_env/
-__pycache__/
 *.wav
+__pyache__/
+*.pyc
+*.pyco
+*.pyd
+*.pyo
