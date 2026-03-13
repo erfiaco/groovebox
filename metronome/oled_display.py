@@ -52,7 +52,7 @@ class OledDisplay:
 
     # ── Pantalla metrónomo parado ─────────────────────────────────────────────
 
-    def show_config(self, bpm, beats, mode_name="NORMAL"):
+    def show_config(self, bpm, beats, mode_name="NORMAL", muted=False):
         img = Image.new("1", (self.W, self.H))
         d   = ImageDraw.Draw(img)
         d.text((0, 0),  "METRO", font=self._font_big, fill=255)
@@ -64,11 +64,13 @@ class OledDisplay:
         d.text((0, 37), "Comp:", font=self._font_med, fill=255)
         d.text((50, 37), f"{beats}/4", font=self._font_med, fill=255)
         d.text((0, 53), "26\u2193  6=PLAY  13\u2191", font=self._font_small, fill=255)
+        if muted:
+            d.text((2, 54), "MUTE", font=self._font_small, fill=255)
         self._display(img)
 
     # ── Pantalla metrónomo sonando ────────────────────────────────────────────
 
-    def show_playing(self, bpm, beats, mode_name="NORMAL"):
+    def show_playing(self, bpm, beats, mode_name="NORMAL", muted=False):
         img = Image.new("1", (self.W, self.H))
         d   = ImageDraw.Draw(img)
         bpm_str = str(bpm)
@@ -80,6 +82,8 @@ class OledDisplay:
         mode_abbr = mode_name[0] if mode_name else "N"
         d.text((self.W - self._tw(d, mode_abbr, self._font_small) - 2, 54),
                mode_abbr, font=self._font_small, fill=255)
+        if muted:
+            d.text((2, 54), "MUTE", font=self._font_small, fill=255)
         self._display(img)
 
     # ── Pantalla COMPÁS ───────────────────────────────────────────────────────

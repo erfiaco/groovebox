@@ -115,13 +115,18 @@ class MetronomeApp:
         if self._state == "METRONOMO":
             self._go_to_compas()
 
+    
     def _on_back(self):
         s = self._state
-        if s == "COMPAS":
-            self._go_to_metronomo()         # sin salvar
+        if s == "METRONOMO":
+            self.metro.muted = not self.metro.muted
+            print(f"[Metro] Mute: {self.metro.muted}")
+            self._refresh_display()
+        elif s == "COMPAS":
+            self._go_to_metronomo()
         elif s == "EDIT":
-            self._go_to_compas_from_edit()  # sin salvar
-
+            self._go_to_compas_from_edit()
+    
     def _on_exit(self):
         print("[Metro] Saliendo al boot menu...")
         self._cleanup()
@@ -294,9 +299,9 @@ class MetronomeApp:
             beats = self._numerator
             mode  = MODES[self._mode_idx]
             if self.metro.is_playing:
-                self.display.show_playing(bpm, beats, mode)
+                self.display.show_playing(bpm, beats, mode, muted=self.metro.muted)
             else:
-                self.display.show_config(bpm, beats, mode)
+                self.display.show_config(bpm, beats, mode, muted=self.metro.muted)
 
         elif s == "COMPAS":
             self.display.show_compas(

@@ -102,6 +102,7 @@ class Metronome:
         self._stop_event = threading.Event()
         self._thread     = None
         self.is_playing  = False
+        self.muted = False
 
         # Callback externo: fn(beat_in_bar: int, beats_per_bar: int)
         # Se llama desde el thread del metrónomo (no bloquear demasiado)
@@ -183,10 +184,11 @@ class Metronome:
 
             # ── Audio ────────────────────────────────────────────────
             sound = self._accent if beat_in_bar == 1 else self._beat
-            try:
-                sd.play(sound, SAMPLE_RATE)
-            except Exception as e:
-                print(f"[Metronome] sd.play error: {e}")
+            if not self.muted:
+                try:
+                    sd.play(sound, SAMPLE_RATE)
+                except Exception as e:
+                    print(f"[Metronome] sd.play error: {e}")
 
             # ── Callback al exterior ─────────────────────────────────
             if self.on_beat:
