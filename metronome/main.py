@@ -82,6 +82,7 @@ class MetronomeApp:
         # ── Componentes ───────────────────────────────────────────────────
         self.metro   = Metronome(bpm=DEFAULT_BPM,
                                  beats_per_bar=DEFAULT_NUMERATOR)
+        self.metro.beat_sounds = self._build_beat_sounds()
         self.display = OledDisplay()
         self.buttons = ButtonsManager()
 
@@ -171,6 +172,18 @@ class MetronomeApp:
     # METRONOMO
     # =========================================================================
 
+    def _build_beat_sounds(self):
+        """Construye la lista de sonidos a partir de beat_states."""
+        sounds = []
+        for state in self._beat_states:
+            if state == BEAT_ACCENT:
+                sounds.append(self.metro._accent)
+            elif state == BEAT_NORMAL:
+                sounds.append(self.metro._beat)
+            else:  # BEAT_SILENCE
+                sounds.append(None)
+        return sounds
+    
     def _metro_start_stop(self):
         if self.metro.is_playing:
             self.metro.stop()
@@ -208,6 +221,7 @@ class MetronomeApp:
         self._denominator = self._p_denominator
         self._beat_states = list(self._p_beat_states)
         self.metro.set_time_sig(self._numerator)
+        self.metro.beat_sounds = self._build_beat_sounds()
         self._state = "METRONOMO"
         self._refresh_display()
         print(f"[Metro] Compás guardado: {self._numerator}/{self._denominator} "

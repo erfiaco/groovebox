@@ -102,7 +102,8 @@ class Metronome:
         self._stop_event = threading.Event()
         self._thread     = None
         self.is_playing  = False
-        self.muted = False
+        self.muted       = False
+        self.beat_sounds = []  # lista de np.ndarray o None, uno por beat
 
         # Callback externo: fn(beat_in_bar: int, beats_per_bar: int)
         # Se llama desde el thread del metrónomo (no bloquear demasiado)
@@ -183,8 +184,13 @@ class Metronome:
             beat_in_bar = (beat_count % self.beats_per_bar) + 1  # 1..N
 
             # ── Audio ────────────────────────────────────────────────
-            sound = self._accent if beat_in_bar == 1 else self._beat
-            if not self.muted:
+            
+            if self.beat_sounds and beat_in_bar - 1 < len(self.beat_sounds):
+                sound = self.beat_sounds[beat_in_bar - 1]
+            else:
+                sound = self._accent if beat_in_bar == 1 else self._beat
+
+            if not self.muted and sound is not None:
                 try:
                     sd.play(sound, SAMPLE_RATE)
                 except Exception as e:
