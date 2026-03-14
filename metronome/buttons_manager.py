@@ -6,8 +6,8 @@ GPIO asignados:
     GPIO 6   → play tap / menú Compás (hold 1.5s)
     GPIO 5   → back tap / salir al boot menu (hold 3s)
     GPIO 25  → abrir menú Modos / seleccionar en menús
-    GPIO 9   → navegar abajo / decrementar valor
-    GPIO 22  → navegar arriba / incrementar valor
+    GPIO 22   → navegar abajo / decrementar valor
+    GPIO 9  → navegar arriba / incrementar valor
     GPIO 26  → tempo down (tap + hold progresivo)
     GPIO 13  → tempo up   (tap + hold progresivo)
 
@@ -32,7 +32,7 @@ PIN_TEMPO_UP  = 13
 
 # ── Tiempos de hold ───────────────────────────────────────────────────────────
 PLAY_HOLD_TIME = 1.5   # s → menú Compás
-BACK_HOLD_TIME = 3.0   # s → boot menu
+BACK_HOLD_TIME = 2.0   # s → boot menu
 
 # ── Hold progresivo de tempo ──────────────────────────────────────────────────
 HOLD_INITIAL_DELAY = 0.30
