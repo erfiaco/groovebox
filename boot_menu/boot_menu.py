@@ -44,8 +44,10 @@ except:
 # Items del menú
 menu_items = [
     "Looper",
+    "Sync_loop",
     "Practice Player",
     "Bluetooth Rec",
+    "Metronome",
     "Shutdown",
     "Exit"
 ]
@@ -178,6 +180,38 @@ def select():
         # Termina boot_menu
         os._exit(0)
         
+    elif selection == "Sync_loop":
+        print("Arrancando Sync...")
+        
+        # Mensaje en pantalla
+        img = Image.new("1", (128, 64))
+        draw = ImageDraw.Draw(img)
+        draw.text((20, 25), "Starting", font=font, fill=255)
+        draw.text((25, 40), "Sync_Loop...", font=font_small, fill=255)
+        device.display(img)
+        time.sleep(0.5)
+        
+        # Limpia pantalla
+        img = Image.new("1", (128, 64))
+        device.display(img)
+        
+        # Limpia GPIO
+        GPIO.cleanup()
+        
+        # Lanza looper
+        subprocess.Popen(
+            ["/home/Javo/Proyects/Looper/looper_env/bin/python", "-u", "-m", "software.main"],
+            cwd="/home/Javo/Proyects/sync_looper",
+            stdin=subprocess.DEVNULL,
+            stdout=open('/tmp/sync_looper.log', 'w', buffering=1),
+            stderr=open('/tmp/sync_looper_errors.log', 'w', buffering=1),
+            start_new_session=True
+        )
+        
+        # Termina boot_menu
+        os._exit(0)
+
+        
     elif selection == "Practice Player":
         print("Arrancando Practice Player...")
         
@@ -203,6 +237,37 @@ def select():
             stdin=subprocess.DEVNULL,
             stdout=open('/tmp/practice_player.log', 'w', buffering=1),
             stderr=open('/tmp/practice_player_errors.log', 'w', buffering=1),
+            start_new_session=True
+        )
+        
+        # Termina boot_menu
+        os._exit(0)
+        
+    elif selection == "Metronome":
+        print("Arrancando Metronome...")
+        
+        # Mensaje en pantalla
+        img = Image.new("1", (128, 64))
+        draw = ImageDraw.Draw(img)
+        draw.text((15, 25), "Starting", font=font, fill=255)
+        draw.text((10, 40), "Metronome...", font=font_small, fill=255)
+        device.display(img)
+        time.sleep(0.5)
+        
+        # Limpia pantalla
+        img = Image.new("1", (128, 64))
+        device.display(img)
+        
+        # Limpia GPIO
+        GPIO.cleanup()
+        
+        # Lanza Metronome
+        subprocess.Popen(
+            ["/home/Javo/Proyects/metronome/metronome_env/bin/python", "-u", "main.py"],
+            cwd="/home/Javo/Proyects/metronome",
+            stdin=subprocess.DEVNULL,
+            stdout=open('/tmp/metronome.log', 'w', buffering=1),
+            stderr=open('/tmp/metronome_errors.log', 'w', buffering=1),
             start_new_session=True
         )
         
