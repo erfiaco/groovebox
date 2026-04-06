@@ -60,6 +60,17 @@ class MetronomeApp:
 
         # ── Modo de reproducción ──────────────────────────────────────────
         self._mode_idx = 0  # índice en MODES
+        
+        # ── Configuración Studio ──────────────────────────────────────────────
+        self._studio = {
+            "mute_bars":     0,
+            "every_unmuted": 1,
+            "increase_bpm":  0,
+            "every_bars":    0,
+            } 
+        self._p_studio       = dict(self._studio)  # pendiente mientras editas
+        self._studio_cursor  = 0
+        self._edit_source    = "COMPAS"  # "COMPAS" o "STUDIO"
 
         # ── Compás activo (aplicado al metrónomo) ─────────────────────────
         self._numerator   = DEFAULT_NUMERATOR
@@ -111,6 +122,8 @@ class MetronomeApp:
             self._compas_save_and_exit()
         elif s == "EDIT":
             self._edit_save_and_exit()
+        elif s == "STUDIO":
+            self._studio_save_and_exit()
 
     def _on_play_hold(self):
         if self._state == "METRONOMO":
@@ -127,6 +140,8 @@ class MetronomeApp:
             self._go_to_metronomo()
         elif s == "EDIT":
             self._go_to_compas_from_edit()
+        elif s == "STUDIO":
+            self._go_to_metronomo()
     
     def _on_exit(self):
         print("[Metro] Saliendo al boot menu...")
@@ -136,9 +151,13 @@ class MetronomeApp:
     def _on_menu(self):
         s = self._state
         if s == "METRONOMO":
-            pass   # futuro: menú de modos
+            self._go_to_studio()
         elif s == "COMPAS":
+            self._edit_source = "COMPAS"
             self._go_to_edit()
+        elif s == "STUDIO":
+            self._edit_source = "STUDIO"
+            self._go_to_edit_studio()
 
     def _on_nav_down(self):
         s = self._state
@@ -148,6 +167,9 @@ class MetronomeApp:
             self._compas_cursor_move(+1)
         elif s == "EDIT":
             self._edit_change(-1)
+        elif s == "STUDIO":
+            self._studio_cursor = (self._studio_cursor + 1) % 4
+            self._refresh_display()
 
     def _on_nav_up(self):
         s = self._state
@@ -157,6 +179,9 @@ class MetronomeApp:
             self._compas_cursor_move(-1)
         elif s == "EDIT":
             self._edit_change(+1)
+        elif s == "STUDIO":
+            self._studio_cursor = (self._studio_cursor - 1) % 4
+            self._refresh_display()
 
     def _on_tempo_change(self, delta):
         if self._state == "METRONOMO":
@@ -226,6 +251,29 @@ class MetronomeApp:
         self._refresh_display()
         print(f"[Metro] Compás guardado: {self._numerator}/{self._denominator} "
               f"beats={[BEAT_NAMES[b] for b in self._beat_states]}")
+        
+    def _go_to_studio(self):
+        if self.metro.is_playing:
+            self.metro.stop()
+        self._p_studio     = dict(self._studio)
+        self._studio_cursor = 0
+        self._state = "STUDIO"
+        self._refresh_display()
+        print("[Metro] → STUDIO")
+
+    def _studio_save_and_exit(self):
+        self._studio = dict(self._p_studio)
+        self._state  = "METRONOMO"
+        self._refresh_display()
+        print(f"[Metro] Studio guardado: {self._studio}")
+
+    def _go_to_edit_studio(self):
+        keys  = ["mute_bars", "every_unmuted", "increase_bpm", "every_bars"]
+        key   = keys[self._studio_cursor]
+        self._edit_value = self._p_studio[key]
+        self._state = "EDIT"
+        self._refresh_display()
+        print(f"[Metro] → EDIT studio cursor={self._studio_cursor}")
 
     def _go_to_edit(self):
         """COMPAS → EDIT del item en cursor."""
@@ -242,32 +290,38 @@ class MetronomeApp:
         print(f"[Metro] → EDIT cursor={cursor}")
 
     def _go_to_compas_from_edit(self):
-        """EDIT → COMPAS sin salvar."""
-        self._state = "COMPAS"
+        if self._edit_source == "STUDIO":
+            self._state = "STUDIO"
+        else:
+            self._state = "COMPAS"
         self._refresh_display()
-        print("[Metro] → COMPAS (sin salvar edit)")
+        print("[Metro] → back from EDIT (sin salvar)")
 
     def _edit_save_and_exit(self):
-        """EDIT → COMPAS salvando el valor editado. Cursor no cambia."""
-        cursor = self._compas_cursor
-        if cursor == 0:
-            # Numerador cambió → ajustar lista de beats
-            new_n = self._edit_value
-            old_n = len(self._p_beat_states)
-            if new_n > old_n:
-                self._p_beat_states += [BEAT_NORMAL] * (new_n - old_n)
-            elif new_n < old_n:
-                self._p_beat_states = self._p_beat_states[:new_n]
-            self._p_numerator = new_n
-        elif cursor == 1:
-            self._p_denominator = self._edit_value
+        if self._edit_source == "STUDIO":
+            keys = ["mute_bars", "every_unmuted", "increase_bpm", "every_bars"]
+            key  = keys[self._studio_cursor]
+            self._p_studio[key] = self._edit_value
+            self._state = "STUDIO"
         else:
-            beat_idx = cursor - 2
-            self._p_beat_states[beat_idx] = self._edit_value
-
-        self._state = "COMPAS"
+            # lógica COMPAS existente
+            cursor = self._compas_cursor
+            if cursor == 0:
+                new_n = self._edit_value
+                old_n = len(self._p_beat_states)
+                if new_n > old_n:
+                    self._p_beat_states += [BEAT_NORMAL] * (new_n - old_n)
+                elif new_n < old_n:
+                    self._p_beat_states = self._p_beat_states[:new_n]
+                self._p_numerator = new_n
+            elif cursor == 1:
+                self._p_denominator = self._edit_value
+            else:
+                beat_idx = cursor - 2
+                self._p_beat_states[beat_idx] = self._edit_value
+            self._state = "COMPAS"
         self._refresh_display()
-        print(f"[Metro] Edit guardado en cursor={cursor}: {self._edit_value}")
+        print(f"[Metro] Edit guardado: {self._edit_value}")
 
     # =========================================================================
     # Lógica interna de COMPAS y EDIT
@@ -298,6 +352,27 @@ class MetronomeApp:
             # Beat state — ciclar Acento / Normal / Silencio
             self._edit_value = (self._edit_value + direction) % 3
         self._refresh_display()
+        
+
+    def _edit_change(self, direction):
+        cursor = self._compas_cursor
+        if self._edit_source == "STUDIO":
+            keys    = ["mute_bars", "every_unmuted", "increase_bpm", "every_bars"]
+            key     = keys[self._studio_cursor]
+            min_val = 1 if key == "every_unmuted" else 0
+            self._edit_value = max(min_val, self._edit_value + direction)
+        elif cursor == 0:
+            self._edit_value = max(NUMERATOR_MIN, min(NUMERATOR_MAX, self._edit_value + direction))
+                                                                        
+        elif cursor == 1:
+            idx = DENOMINATOR_OPTIONS.index(self._edit_value) \
+                  if self._edit_value in DENOMINATOR_OPTIONS else 1
+            idx = (idx + direction) % len(DENOMINATOR_OPTIONS)
+            self._edit_value = DENOMINATOR_OPTIONS[idx]
+        else:
+            self._edit_value = (self._edit_value + direction) % 3
+        self._refresh_display()        
+
 
     # =========================================================================
     # Display
@@ -324,19 +399,29 @@ class MetronomeApp:
                 self._p_beat_states,
                 self._compas_cursor
             )
+            
+        elif s == "STUDIO":
+            self.display.show_studio(self._p_studio, self._studio_cursor)
 
         elif s == "EDIT":
-            cursor = self._compas_cursor
-            if cursor == 0:
-                self.display.show_edit_number(
-                    "Numerador", self._edit_value,
-                    NUMERATOR_MIN, NUMERATOR_MAX)
-            elif cursor == 1:
-                self.display.show_edit_number(
-                    "Denominador", self._edit_value,
-                    DENOMINATOR_OPTIONS[0], DENOMINATOR_OPTIONS[-1])
+            if self._edit_source == "STUDIO":
+                keys   = ["Mute bars", "Every unmuted", "Increase BPM", "Every bars"]
+                title  = keys[self._studio_cursor]
+                min_v  = 1 if self._studio_cursor == 1 else 0
+                self.display.show_edit_number(title, self._edit_value, min_v, 99)
             else:
-                self.display.show_edit_beat(cursor - 2, self._edit_value)
+                cursor = self._compas_cursor
+                if cursor == 0:
+                    self.display.show_edit_number(
+                        "Numerador", self._edit_value,
+                        NUMERATOR_MIN, NUMERATOR_MAX)
+                elif cursor == 1:
+                    self.display.show_edit_number(
+                        "Denominador", self._edit_value,
+                        DENOMINATOR_OPTIONS[0], DENOMINATOR_OPTIONS[-1])
+                else:
+                    self.display.show_edit_beat(cursor - 2, self._edit_value)
+                
 
     # =========================================================================
     # Loop principal

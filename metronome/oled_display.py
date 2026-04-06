@@ -70,6 +70,31 @@ class OledDisplay:
 
     # ── Pantalla metrónomo sonando ────────────────────────────────────────────
 
+    def show_studio(self, values, cursor_pos):
+        """
+        values: dict con claves mute_bars, every_unmuted, increase_bpm, every_bars
+        cursor_pos: 0..3
+        """
+        img = Image.new("1", (self.W, self.H))
+        d   = ImageDraw.Draw(img)
+
+        d.text((0, 0), "STUDIO", font=self._font_big, fill=255)
+        d.line([(0, 18), (self.W, 18)], fill=255)
+
+        lines = [
+            ("Mute bars:",        values["mute_bars"]),
+            ("Every unmuted:",    values["every_unmuted"]),
+            ("Increase BPM:",     values["increase_bpm"]),
+            ("Every bars:",       values["every_bars"]),
+        ]
+
+        for i, (label, val) in enumerate(lines):
+            y = 20 + i * 11
+            prefix = ">" if cursor_pos == i else " "
+            d.text((0, y), f"{prefix}{label} {val}", font=self._font_small, fill=255)
+
+        self._display(img)
+
     def show_playing(self, bpm, beats, mode_name="NORMAL", muted=False):
         img = Image.new("1", (self.W, self.H))
         d   = ImageDraw.Draw(img)

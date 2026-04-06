@@ -6,3 +6,6 @@ __pycache__/
 *.pyco
 *.pyd
 *.pyo
+__pycache__/
+*.py[cod]
+*.pyc
