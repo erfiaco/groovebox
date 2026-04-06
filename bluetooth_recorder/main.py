@@ -49,9 +49,9 @@ class BluetoothRecorder:
         
         # Botones: GPIO26 (bajar), GPIO6 (subir), GPIO5 (START), GPIO13 (salir con pulsación larga)
         time.sleep(1.2)
-        self.btn_bajar = Button(22, pull_up=True, bounce_time=0.03)
-        self.btn_subir = Button(9, pull_up=True, bounce_time=0.03)
-        self.btn_start = Button(13, pull_up=True, bounce_time=0.03)
+        self.btn_bajar = Button(9, pull_up=True, bounce_time=0.03)
+        self.btn_subir = Button(22, pull_up=True, bounce_time=0.03)
+        self.btn_start = Button(6, pull_up=True, bounce_time=0.03)
         self.btn_salir = Button(5, pull_up=True, bounce_time=0.03)
         
         self.btn_bajar.when_pressed = self.on_bajar_pressed
@@ -359,29 +359,43 @@ class BluetoothRecorder:
     
     def cleanup(self):
         """Limpieza al salir"""
-        # Parar audio en vivo
+        print("🧹 Limpiando recursos...")
+        
+        # 1. Parar audio en vivo CON TIMEOUT
         if self.proceso_audio_live:
             try:
-                print("🔇 Deteniendo audio en vivo...")
+                print("  🔇 Deteniendo audio en vivo...")
                 self.proceso_audio_live.terminate()
-                self.proceso_audio_live.wait(timeout=2)
+                self.proceso_audio_live.wait(timeout=1)
             except:
                 try:
                     self.proceso_audio_live.kill()
+                    self.proceso_audio_live.wait(timeout=0.5)
                 except:
                     pass
         
-        # Parar grabación si está activa
+        # 2. Parar grabación CON TIMEOUT
         if self.proceso_arecord:
             try:
+                print("  🎙️ Deteniendo grabación...")
                 self.proceso_arecord.terminate()
-                self.proceso_arecord.wait(timeout=2)
+                self.proceso_arecord.wait(timeout=1)
             except:
                 try:
                     self.proceso_arecord.kill()
+                    self.proceso_arecord.wait(timeout=0.5)
                 except:
                     pass
         
+        # 3. Matar cualquier proceso zombie que quede
+        subprocess.run(["killall", "-9", "arecord"], stderr=subprocess.DEVNULL)
+        subprocess.run(["killall", "-9", "bluealsa-aplay"], stderr=subprocess.DEVNULL)
+        print("  ✓ Procesos de audio terminados")
+        
+        # 4. Esperar liberación
+        time.sleep(0.3)
+        
+        # 5. Cerrar botones
         try:
             self.btn_bajar.close()
             self.btn_subir.close()
@@ -390,8 +404,11 @@ class BluetoothRecorder:
         except:
             pass
         
+        # 6. Limpiar display
         img = Image.new("1", (128, 64))
         self.device.display(img)
+        
+        print("✅ Limpieza completada")
     
     def run(self):
         """Ejecuta el grabador"""
