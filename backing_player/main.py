@@ -50,7 +50,8 @@ class BackingPlayer:
         try:
             while True:
                 time.sleep(0.25)
-                self._update_display()
+                if self.mode == MODE_SELECTION:
+                    self._update_display()
         except KeyboardInterrupt:
             pass
         finally:
