@@ -109,6 +109,14 @@ class OledDisplay:
 
         self._draw(img)
 
+    # ── Cleanup ───────────────────────────────────────────────────────────
+
+    def close(self):
+        try:
+            self.device.cleanup()
+        except Exception:
+            pass
+
     # ── Generic message ───────────────────────────────────────────────────
 
     def show_message(self, msg):

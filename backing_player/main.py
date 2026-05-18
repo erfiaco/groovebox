@@ -155,7 +155,7 @@ class BackingPlayer:
         self._cleanup()
         if os.path.exists(BOOT_MENU):
             subprocess.Popen([sys.executable, BOOT_MENU])
-        sys.exit(0)
+        os._exit(0)
 
     # ── Display ───────────────────────────────────────────────────────────
 
@@ -192,6 +192,10 @@ class BackingPlayer:
             pass
         try:
             self.buttons.close()
+        except Exception:
+            pass
+        try:
+            self.oled.close()
         except Exception:
             pass
 
