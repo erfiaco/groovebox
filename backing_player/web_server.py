@@ -3,7 +3,7 @@ import queue
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_HTML = b"""<!DOCTYPE html>
+_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -181,8 +181,9 @@ class WebServer:
                     pass
 
     def _html(self, req):
+        body = _HTML.encode('utf-8')
         req.send_response(200)
         req.send_header('Content-Type', 'text/html; charset=utf-8')
-        req.send_header('Content-Length', len(_HTML))
+        req.send_header('Content-Length', len(body))
         req.end_headers()
-        req.wfile.write(_HTML)
+        req.wfile.write(body)
