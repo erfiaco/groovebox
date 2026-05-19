@@ -22,9 +22,10 @@ class MetroLed:
         self._led_accent = LED(PIN_ACCENT)
         self._led_beat   = LED(PIN_BEAT)
 
-        self._running = False
-        self._thread  = None
-        self._anchor  = None
+        self._running    = False
+        self._stop_event = threading.Event()
+        self._thread     = None
+        self._anchor     = None
 
     @property
     def running(self):
@@ -33,6 +34,7 @@ class MetroLed:
     def start(self, anchor=None):
         if self._running:
             return
+        self._stop_event.clear()
         self._running = True
         self._anchor  = anchor if anchor is not None else time.perf_counter()
         self._thread  = threading.Thread(target=self._run, daemon=True, name='metro-led')
@@ -40,6 +42,7 @@ class MetroLed:
 
     def stop(self):
         self._running = False
+        self._stop_event.set()
         self._led_accent.off()
         self._led_beat.off()
 
@@ -54,7 +57,7 @@ class MetroLed:
     def _wait_until(self, target):
         remaining = target - time.perf_counter()
         if remaining > 0.003:
-            time.sleep(remaining - 0.002)
+            self._stop_event.wait(timeout=remaining - 0.002)
         while time.perf_counter() < target:
             pass
 
