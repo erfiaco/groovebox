@@ -9,11 +9,12 @@ import subprocess
 import time
 from datetime import datetime
 
-from audio_engine  import BackingEngine
+from audio_engine    import BackingEngine
 from buttons_manager import ButtonsManager
-from file_browser  import FileBrowser
-from metro_led     import MetroLed
-from oled_display  import OledDisplay
+from file_browser    import FileBrowser
+from metro_led       import MetroLed
+from oled_display    import OledDisplay
+from web_server      import WebServer
 
 TRACKS_DIR      = os.path.join(os.path.dirname(__file__), 'tracks')
 RECORDINGS_DIR  = os.path.join(TRACKS_DIR, 'recordings')
@@ -33,6 +34,7 @@ class BackingPlayer:
         self.browser = FileBrowser(TRACKS_DIR)
         self.oled    = OledDisplay()
         self.metro   = MetroLed()
+        self.web     = WebServer()
         self.buttons = ButtonsManager(
             on_btn1      = self._on_btn1,
             on_btn2      = self._on_btn2,
@@ -41,6 +43,7 @@ class BackingPlayer:
             on_btn4_hold = self._on_btn4_hold,
         )
         self.engine.on_state_change = self._on_engine_state
+        self.metro.on_beat = self._on_beat
 
     # ── Main loop ────────────────────────────────────────────────────────
 
@@ -107,6 +110,10 @@ class BackingPlayer:
                 self._track_name = os.path.splitext(os.path.basename(path))[0]
                 self.mode = MODE_PLAY
                 self.oled.show_message(f'Loaded: {self._track_name}')
+                # Start preview metro so mobile and LED show tempo immediately
+                self.metro.bpm           = meta['tempo']
+                self.metro.beats_per_bar = int(str(meta['compas']).split('/')[0])
+                self.metro.start()
                 time.sleep(0.8)
             except Exception as e:
                 print(f"[Main] load error: {e}")
@@ -126,10 +133,17 @@ class BackingPlayer:
             beats        = int(str(meta['compas']).split('/')[0])
             tempo        = meta['tempo']
             bar_dur_sec  = (60.0 / tempo) * beats
+            self.metro.stop()  # stop preview so engine can restart with sync anchor
             self.engine.start_play(self.metro, cc_playback, bar_dur_sec)
         else:
             self.engine.stop()
             self.metro.stop()
+            # Restart preview metro so mobile still shows tempo
+            if self.engine.meta:
+                meta = self.engine.meta
+                self.metro.bpm           = meta['tempo']
+                self.metro.beats_per_bar = int(str(meta['compas']).split('/')[0])
+                self.metro.start()
             self._update_display()
 
     def _save_recording(self):
@@ -179,6 +193,7 @@ class BackingPlayer:
                 mute_input = self.engine.mute_input,
             )
         self._print_status()
+        self._push_web_state()
 
     def _print_status(self):
         STATE_ICON = {
@@ -223,6 +238,30 @@ class BackingPlayer:
                 '└─────────────────────────────────┘',
             ]
         print('\033[H\033[2J' + '\n'.join(lines), flush=True)
+
+    def _on_beat(self, beat_in_bar, beats_per_bar):
+        self.web.push({
+            'type':          'beat',
+            'beat_in_bar':   beat_in_bar,
+            'beats_per_bar': beats_per_bar,
+            'is_accent':     beat_in_bar == 1,
+        })
+
+    def _push_web_state(self):
+        if self.mode == MODE_SELECTION:
+            self.web.push({'type': 'state', 'state': 'IDLE', 'track': '',
+                           'tempo': 0, 'time_sig': '', 'bar': 0, 'total_bars': 0})
+        else:
+            meta = self.engine.meta or {}
+            self.web.push({
+                'type':       'state',
+                'state':      self.engine.state,
+                'track':      self._track_name,
+                'tempo':      meta.get('tempo', 0),
+                'time_sig':   str(meta.get('compas', '')),
+                'bar':        self.engine.current_bar,
+                'total_bars': self.engine.total_bars,
+            })
 
     def _on_engine_state(self, state):
         self._update_display()

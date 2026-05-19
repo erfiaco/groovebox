@@ -16,6 +16,9 @@ class MetroLed:
         self.bpm            = bpm
         self.beats_per_bar  = beats_per_bar
 
+        # Optional callback: fn(beat_in_bar: int, beats_per_bar: int)
+        self.on_beat = None
+
         self._led_accent = LED(PIN_ACCENT)
         self._led_beat   = LED(PIN_BEAT)
 
@@ -70,6 +73,12 @@ class MetroLed:
             else:
                 self._led_accent.off()
                 self._led_beat.on()
+
+            if self.on_beat:
+                try:
+                    self.on_beat(beat_in_bar, bpb)
+                except Exception:
+                    pass
 
             self._wait_until(beat_time + FLASH_DURATION)
             self._led_accent.off()
