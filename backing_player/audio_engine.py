@@ -15,6 +15,7 @@ Recording architecture:
   backing and mixed in _cb_looping, so additional layers can be added later.
 """
 
+import queue
 import threading
 import time
 
@@ -68,6 +69,11 @@ class BackingEngine:
 
         # External callback: fn(state: str)
         self.on_state_change = None
+
+        # Persistent notification worker — audio callbacks never create threads
+        self._notify_queue  = queue.Queue()
+        self._notify_thread = threading.Thread(target=self._notify_worker, daemon=True)
+        self._notify_thread.start()
 
     # ── Properties ──────────────────────────────────────────────────────
 
@@ -221,11 +227,19 @@ class BackingEngine:
 
     # ── Internal helpers ─────────────────────────────────────────────────
 
+    def _notify_worker(self):
+        while True:
+            state = self._notify_queue.get()
+            if state is None:
+                return
+            if self.on_state_change:
+                self.on_state_change(state)
+
     def _notify(self, state):
-        if self.on_state_change:
-            threading.Thread(
-                target=self.on_state_change, args=(state,), daemon=True
-            ).start()
+        try:
+            self._notify_queue.put_nowait(state)
+        except queue.Full:
+            pass
 
     def _wait_until(self, target):
         remaining = target - time.perf_counter()
@@ -301,7 +315,7 @@ class BackingEngine:
         avail = len(backing) - pos
         if avail <= 0:
             self._state = 'IDLE'
-            threading.Thread(target=self._notify, args=('IDLE',), daemon=True).start()
+            self._notify('IDLE')
             return
 
         actual = min(frames, avail)
@@ -312,14 +326,14 @@ class BackingEngine:
         if state == 'PLAYING' and new_pos > self._bucle_start:
             self._rec_pos = 0
             self._state   = 'RECORDING'
-            threading.Thread(target=self._notify, args=('RECORDING',), daemon=True).start()
+            self._notify('RECORDING')
             return
 
         if self._state == 'RECORDING' and new_pos >= self._bucle_end:
             self._recorded = True
             self._loop_pos = 0
             self._state    = 'LOOPING'
-            threading.Thread(target=self._notify, args=('LOOPING',), daemon=True).start()
+            self._notify('LOOPING')
 
     def _cb_looping(self, outdata, frames):
         """Loop bucle section: backing slice + rec_buffer, mixed."""
@@ -349,9 +363,7 @@ class BackingEngine:
                     self._loop_pos = 0
                     self._state    = 'CODA'
                     self._play_pos = self._coda_start
-                    threading.Thread(
-                        target=self._notify, args=('CODA',), daemon=True
-                    ).start()
+                    self._notify('CODA')
                     return   # remaining frames are zeros (outdata zeroed at top)
 
         self._loop_pos = lp
@@ -365,7 +377,7 @@ class BackingEngine:
         avail = coda_end - pos
         if avail <= 0:
             self._state = 'IDLE'
-            threading.Thread(target=self._notify, args=('IDLE',), daemon=True).start()
+            self._notify('IDLE')
             return
 
         actual = min(frames, avail)
@@ -374,4 +386,4 @@ class BackingEngine:
 
         if self._play_pos >= coda_end:
             self._state = 'IDLE'
-            threading.Thread(target=self._notify, args=('IDLE',), daemon=True).start()
+            self._notify('IDLE')

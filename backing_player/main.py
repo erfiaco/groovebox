@@ -1,9 +1,11 @@
 print('LOADING...')
 
+import sys
+sys.setswitchinterval(0.001)  # 1ms GIL switch — reduces I2C interference on audio thread
+
 import json
 import os
 import subprocess
-import sys
 import time
 from datetime import datetime
 
@@ -176,6 +178,51 @@ class BackingPlayer:
                 silenced   = self.engine.silenced,
                 mute_input = self.engine.mute_input,
             )
+        self._print_status()
+
+    def _print_status(self):
+        STATE_ICON = {
+            'IDLE':      '■  IDLE',
+            'COUNTDOWN': '◆  COUNTDOWN',
+            'PLAYING':   '▶  PLAYING',
+            'RECORDING': '●  RECORDING',
+            'LOOPING':   '↺  LOOPING',
+            'CODA':      '▶▶ CODA',
+        }
+        if self.mode == MODE_SELECTION:
+            label      = self.browser.get_item_label()
+            pos, total = self.browser.get_position()
+            lines = [
+                '┌─────────────────────────────────┐',
+                '│       BACKING  PLAYER           │',
+                '├─────────────────────────────────┤',
+                f'│  {pos:>2}/{total:<2}  {label[:25]:<25}  │',
+                '├─────────────────────────────────┤',
+                '│  1:SEL  2:PREV  3:NEXT  4:EXIT  │',
+                '└─────────────────────────────────┘',
+            ]
+        else:
+            state = self.engine.state
+            bar   = self.engine.current_bar
+            total = self.engine.total_bars
+            badge = STATE_ICON.get(state, state)
+            flags = []
+            if self.engine.last_rep:   flags.append('LAST-REP')
+            if self.engine.silenced:   flags.append('SILENCED')
+            if self.engine.mute_input: flags.append('MUTE-REC')
+            flag_str = '  '.join(flags) if flags else '—'
+            track    = self._track_name[:29]
+            lines = [
+                '┌─────────────────────────────────┐',
+                f'│  {track:<31}  │',
+                '├─────────────────────────────────┤',
+                f'│  {badge:<14}  Bar {bar:>3} / {total:<3}       │',
+                f'│  {flag_str:<31}  │',
+                '├─────────────────────────────────┤',
+                '│  1:PLAY  2:LR  3:SIL  4:SAVE   │',
+                '└─────────────────────────────────┘',
+            ]
+        print('\033[H\033[2J' + '\n'.join(lines), flush=True)
 
     def _on_engine_state(self, state):
         self._update_display()

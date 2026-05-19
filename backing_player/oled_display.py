@@ -1,8 +1,11 @@
+import queue
 import threading
 
 from luma.core.interface.serial import i2c
 from luma.oled.device import ssd1306
 from PIL import Image, ImageDraw, ImageFont
+
+_SENTINEL = object()
 
 
 class OledDisplay:
@@ -26,32 +29,43 @@ class OledDisplay:
             self.font_med   = ImageFont.load_default()
             self.font_small = ImageFont.load_default()
 
-    # ── Safe display ─────────────────────────────────────────────────────
+        # Single persistent I2C worker — callers never block on display()
+        self._queue  = queue.Queue(maxsize=2)
+        self._worker = threading.Thread(target=self._worker_loop, daemon=True)
+        self._worker.start()
 
-    def _draw(self, img, timeout=1.0):
-        if self._disabled:
-            return
-        result = [False]
+    # ── I2C worker loop (runs in its own thread forever) ─────────────────
 
-        def worker():
+    def _worker_loop(self):
+        while True:
+            img = self._queue.get()
+            if img is _SENTINEL:
+                return
             try:
                 self.device.display(img)
-                result[0] = True
+                self._error_count = 0
             except Exception as e:
-                print(f"[OLED] error: {e}")
+                self._error_count += 1
+                print(f"[OLED] error #{self._error_count}: {e}")
+                if self._error_count >= 5:
+                    self._disabled = True
+                    print('[OLED] disabled - too many I2C errors')
 
-        t = threading.Thread(target=worker, daemon=True)
-        t.start()
-        t.join(timeout=timeout)
+    # ── Non-blocking enqueue ──────────────────────────────────────────────
 
-        if t.is_alive():
-            self._error_count += 1
-            print(f"[OLED] timeout #{self._error_count}")
-            if self._error_count >= 5:
-                self._disabled = True
-                print('[OLED] disabled - too many I2C errors')
-        elif result[0]:
-            self._error_count = 0
+    def _draw(self, img):
+        return  # OLED disabled for testing
+        if self._disabled:
+            return
+        # Drop stale pending frame so only the latest reaches the display
+        try:
+            self._queue.get_nowait()
+        except queue.Empty:
+            pass
+        try:
+            self._queue.put_nowait(img)
+        except queue.Full:
+            pass
 
     # ── Browser screen ───────────────────────────────────────────────────
 
@@ -112,6 +126,10 @@ class OledDisplay:
     # ── Cleanup ───────────────────────────────────────────────────────────
 
     def close(self):
+        try:
+            self._queue.put_nowait(_SENTINEL)
+        except queue.Full:
+            pass
         try:
             self.device.cleanup()
         except Exception:
