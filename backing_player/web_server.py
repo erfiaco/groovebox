@@ -54,12 +54,13 @@ body{
 #file-list{
   width:100%;max-width:420px;
   border-radius:12px;
-  overflow-y:auto;
+  overflow-y:scroll;
   -webkit-overflow-scrolling:touch;
   overscroll-behavior:contain;
   max-height:280px;
   background:#111;
   display:none;
+  position:relative;
 }
 #file-list.visible{display:block}
 .fl-dir-label{
@@ -239,7 +240,14 @@ function renderList(sel) {
   fileListEl.innerHTML = html;
   fileListEl.className = 'visible';
   const selEl = fileListEl.querySelector('.sel');
-  if (selEl) selEl.scrollIntoView({ block: 'nearest' });
+  if (selEl) {
+    const cRect = fileListEl.getBoundingClientRect();
+    const iRect = selEl.getBoundingClientRect();
+    if (iRect.bottom > cRect.bottom)
+      fileListEl.scrollTop += iRect.bottom - cRect.bottom;
+    else if (iRect.top < cRect.top)
+      fileListEl.scrollTop -= cRect.top - iRect.top;
+  }
 }
 
 // ── SSE ───────────────────────────────────────────────────────────────────
