@@ -54,7 +54,8 @@ body{
 #file-list{
   width:100%;max-width:420px;
   border-radius:12px;
-  overflow:hidden;
+  overflow-y:auto;
+  max-height:280px;
   background:#111;
   display:none;
 }
