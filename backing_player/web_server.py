@@ -260,7 +260,9 @@ function connect() {
       stateEl.style.background = STATE_BG[d.state] || '#222';
       trackEl.textContent      = d.track ? d.track.replace(/_/g,' ') : '—';
       metaEl.textContent       = d.tempo ? d.tempo + ' BPM  ·  ' + d.time_sig : '';
-      barEl.textContent        = d.bar > 0 ? 'Bar ' + d.bar + ' / ' + d.total_bars : '';
+      var barText = d.bar > 0 ? 'Bar ' + d.bar + ' / ' + d.total_bars : '';
+      if (d.last_rep) barText += '  · → CODA';
+      barEl.textContent = barText;
       const bpm = d.tempo || 0;
       const bpb = d.time_sig ? (parseInt(d.time_sig) || 4) : 4;
       if (!bpm || d.state === 'IDLE') {

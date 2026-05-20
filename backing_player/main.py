@@ -287,6 +287,7 @@ class BackingPlayer:
                 'time_sig':   str(meta.get('compas', '')),
                 'bar':        self.engine.current_bar,
                 'total_bars': self.engine.total_bars,
+                'last_rep':   self.engine.last_rep,
             })
 
     def _on_engine_state(self, state):
