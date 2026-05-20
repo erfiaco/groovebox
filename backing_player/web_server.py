@@ -96,31 +96,137 @@ const connEl     = document.getElementById('conn');
 const fileListEl = document.getElementById('file-list');
 
 const STATE_BG = {
-  IDLE:      '#222',
-  ARMED:     '#4a2c00',
-  COUNTDOWN: '#bf360c',
-  PLAYING:   '#1b5e20',
-  RECORDING: '#b71c1c',
-  LOOPING:   '#4a148c',
-  CODA:      '#0d47a1',
+  IDLE:'#222', ARMED:'#4a2c00', COUNTDOWN:'#bf360c',
+  PLAYING:'#1b5e20', RECORDING:'#b71c1c', LOOPING:'#4a148c', CODA:'#0d47a1',
 };
 
-let beatTimer = null;
-
+// ── Flash visual ──────────────────────────────────────────────────────────
+let _beatTimer = null;
 function flash(isAccent) {
   beatEl.className = isAccent ? 'accent' : 'pulse';
-  clearTimeout(beatTimer);
-  beatTimer = setTimeout(() => { beatEl.className = ''; }, 120);
+  clearTimeout(_beatTimer);
+  _beatTimer = setTimeout(() => { beatEl.className = ''; }, 120);
 }
 
+// ── AudioContext look-ahead scheduler ─────────────────────────────────────
+// SSE beats have 10-100ms of variable jitter from the network/event loop.
+// Instead of flashing directly on SSE arrival, we run a local scheduler
+// using AudioContext.currentTime (hardware clock, sub-ms precision).
+// SSE beats are used only for gentle phase correction.
+let _ctx          = null;
+let _interval     = 0;       // seconds per beat
+let _bpb          = 4;
+let _nextTime     = 0;       // next beat time in audioCtx.currentTime
+let _nextBIB      = 1;       // next beat-in-bar (1-based)
+let _flashQ       = [];
+let _schedTimer   = null;
+let _rafId        = null;
+let _curBpm       = 0;
+let _pendingStart = null;    // {bpm, bpb} — waiting for AudioContext unlock (iOS)
+
+const LOOKAHEAD_S = 0.1;
+const TICK_MS     = 25;
+
+function _getCtx() {
+  if (!_ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) _ctx = new AC();
+  }
+  if (_ctx && _ctx.state === 'suspended') _ctx.resume();
+  return _ctx;
+}
+
+function _shouldFlash(bib, bpb) {
+  return bpb === 4 ? (bib === 1 || bib === 3) : bib === 1;
+}
+
+function _startScheduler(bpm, bpb) {
+  _stopScheduler();
+  _getCtx();
+  if (!_ctx || _ctx.state !== 'running') {
+    _pendingStart = { bpm: bpm, bpb: bpb };
+    return;
+  }
+  _interval = 60.0 / bpm;
+  _bpb      = bpb;
+  _nextBIB  = 1;
+  _nextTime = _ctx.currentTime + 0.05;
+  _flashQ   = [];
+  _schedTimer = setInterval(_tick, TICK_MS);
+  _raf();
+}
+
+function _stopScheduler() {
+  if (_schedTimer)  { clearInterval(_schedTimer);        _schedTimer   = null; }
+  if (_rafId)       { cancelAnimationFrame(_rafId);      _rafId        = null; }
+  _flashQ       = [];
+  _interval     = 0;
+  _curBpm       = 0;
+  _pendingStart = null;
+}
+
+function _tick() {
+  if (!_ctx || !_interval || _ctx.state !== 'running') return;
+  const deadline = _ctx.currentTime + LOOKAHEAD_S;
+  while (_nextTime < deadline) {
+    if (_shouldFlash(_nextBIB, _bpb))
+      _flashQ.push({ time: _nextTime, isAccent: _nextBIB === 1 });
+    _nextTime += _interval;
+    _nextBIB = (_nextBIB % _bpb) + 1;
+  }
+}
+
+function _syncPhase(beatInBar, isAccent) {
+  if (!_ctx || _ctx.state !== 'running' || !_interval) {
+    // AudioContext not running yet: flash directly from SSE (fallback)
+    flash(isAccent);
+    return;
+  }
+  // SSE arrived slightly late — nudge nextTime 15% toward true next beat
+  _nextTime += (_ctx.currentTime + _interval - _nextTime) * 0.15;
+  _nextBIB   = (beatInBar % _bpb) + 1;
+  // Drop events already in the past
+  _flashQ = _flashQ.filter(function(e) { return e.time > _ctx.currentTime + 0.02; });
+}
+
+function _raf() {
+  _rafId = requestAnimationFrame(function frame() {
+    if (!_interval) { _rafId = null; return; }
+    if (_ctx && _ctx.state === 'running') {
+      const now = _ctx.currentTime;
+      while (_flashQ.length && _flashQ[0].time <= now)
+        flash(_flashQ.shift().isAccent);
+    }
+    _rafId = requestAnimationFrame(frame);
+  });
+}
+
+// Unlock AudioContext on first user gesture (required by iOS Safari)
+function _unlock() {
+  if (_ctx && _ctx.state === 'suspended') {
+    _ctx.resume().then(function() {
+      if (_pendingStart) {
+        _startScheduler(_pendingStart.bpm, _pendingStart.bpb);
+        _pendingStart = null;
+      }
+    });
+  } else if (!_ctx && _pendingStart) {
+    _startScheduler(_pendingStart.bpm, _pendingStart.bpb);
+    _pendingStart = null;
+  }
+}
+document.addEventListener('touchstart', _unlock, { passive: true });
+document.addEventListener('click', _unlock);
+
+// ── File list ─────────────────────────────────────────────────────────────
 function renderList(sel) {
   let html = '<div class="fl-dir-label">' + sel.dir + '</div>';
   sel.items.forEach(function(item, i) {
     const active = i === sel.idx ? ' sel' : '';
     var cls = '', label = item.name;
     if (item.kind === 'wav') {
-      cls = 'fl-wav';
-      label = item.name.replace(/_/g, ' ').replace(/\\.wav$/i, '');
+      cls   = 'fl-wav';
+      label = item.name.replace(/_/g,' ').replace(/\\.wav$/i,'');
     } else if (item.kind === 'dir') {
       cls = 'fl-dir-item';
     } else if (item.kind === 'up') {
@@ -130,10 +236,11 @@ function renderList(sel) {
   });
   fileListEl.innerHTML = html;
   fileListEl.className = 'visible';
-  var selEl = fileListEl.querySelector('.sel');
-  if (selEl) selEl.scrollIntoView({block: 'nearest'});
+  const selEl = fileListEl.querySelector('.sel');
+  if (selEl) selEl.scrollIntoView({ block: 'nearest' });
 }
 
+// ── SSE ───────────────────────────────────────────────────────────────────
 function connect() {
   const es = new EventSource('/events');
   es.onopen  = () => connEl.className = 'ok';
@@ -145,18 +252,23 @@ function connect() {
   es.onmessage = e => {
     const d = JSON.parse(e.data);
     if (d.type === 'beat') {
-      flash(d.is_accent);
+      _syncPhase(d.beat_in_bar, d.is_accent);
     } else if (d.type === 'state') {
-      stateEl.textContent = d.state;
+      stateEl.textContent      = d.state;
       stateEl.style.background = STATE_BG[d.state] || '#222';
-      trackEl.textContent = d.track ? d.track.replace(/_/g,' ') : '—';
-      metaEl.textContent  = d.tempo ? d.tempo + ' BPM  ·  ' + d.time_sig : '';
-      barEl.textContent   = d.bar > 0 ? 'Bar ' + d.bar + ' / ' + d.total_bars : '';
-      if (d.selection) {
-        renderList(d.selection);
-      } else {
-        fileListEl.className = '';
+      trackEl.textContent      = d.track ? d.track.replace(/_/g,' ') : '—';
+      metaEl.textContent       = d.tempo ? d.tempo + ' BPM  ·  ' + d.time_sig : '';
+      barEl.textContent        = d.bar > 0 ? 'Bar ' + d.bar + ' / ' + d.total_bars : '';
+      const bpm = d.tempo || 0;
+      const bpb = d.time_sig ? (parseInt(d.time_sig) || 4) : 4;
+      if (!bpm || d.state === 'IDLE') {
+        _stopScheduler();
+      } else if (bpm !== _curBpm) {
+        _curBpm = bpm;
+        _startScheduler(bpm, bpb);
       }
+      if (d.selection) renderList(d.selection);
+      else             fileListEl.className = '';
     }
   };
 }
