@@ -38,12 +38,13 @@ class BackingEngine:
         self._bar_samples = 0      # samples per bar
 
         # Boundary positions in samples
-        self._bucle_start = 0
-        self._bucle_end   = 0
-        self._coda_start  = 0
-        self._coda_end    = 0
-        self._loop_len    = 0
-        self._total_bars  = 0
+        self._bucle_start    = 0
+        self._bucle_end      = 0
+        self._coda_start     = 0
+        self._coda_end       = 0
+        self._loop_len       = 0
+        self._total_bars     = 0
+        self._alcoda_loop_pos = None  # sample offset within loop to jump to CODA early
 
         # Playback cursors
         self._play_pos = 0   # position in backing array (PLAYING / RECORDING / CODA)
@@ -140,8 +141,14 @@ class BackingEngine:
         self._bucle_end   = bucle[1] * bs
         self._coda_start  = (coda[0] - 1) * bs
         self._coda_end    = min(coda[1] * bs, len(audio))
-        self._loop_len    = self._bucle_end - self._bucle_start
-        self._total_bars  = meta['tot_cc']
+        self._loop_len       = self._bucle_end - self._bucle_start
+        self._total_bars     = meta['tot_cc']
+
+        alcoda = meta.get('alcoda')
+        if alcoda:
+            self._alcoda_loop_pos = (alcoda[0] - bucle[0]) * bs
+        else:
+            self._alcoda_loop_pos = None
 
         self._rec_buffer = np.zeros((self._loop_len, CHANNELS), dtype=np.float32)
         self._recorded   = False
@@ -337,18 +344,25 @@ class BackingEngine:
 
     def _cb_looping(self, outdata, frames):
         """Loop bucle section: backing slice + rec_buffer, mixed."""
-        loop_start = self._bucle_start
-        loop_len   = self._loop_len
-        lp         = self._loop_pos
-        vol        = self._volume
-        backing    = self._backing
-        rec        = self._rec_buffer
+        loop_start  = self._bucle_start
+        loop_len    = self._loop_len
+        alcoda_pos  = self._alcoda_loop_pos
+        lp          = self._loop_pos
+        vol         = self._volume
+        backing     = self._backing
+        rec         = self._rec_buffer
 
         rem    = frames
         offset = 0
 
         while rem > 0:
-            chunk = min(rem, loop_len - lp)
+            # When last_rep is active and alcoda is set, cut the chunk at alcoda point
+            if self._last_rep and alcoda_pos is not None and lp < alcoda_pos:
+                max_in_chunk = alcoda_pos - lp
+            else:
+                max_in_chunk = loop_len - lp
+
+            chunk = min(rem, max_in_chunk)
             outdata[offset:offset + chunk] = (
                 backing[loop_start + lp : loop_start + lp + chunk] +
                 rec[lp : lp + chunk]
@@ -357,14 +371,26 @@ class BackingEngine:
             offset += chunk
             rem    -= chunk
 
+            # Reached alcoda point — jump to CODA early
+            if self._last_rep and alcoda_pos is not None and lp >= alcoda_pos:
+                self._loop_pos = 0
+                self._state    = 'CODA'
+                self._play_pos = self._coda_start
+                self._notify('CODA')
+                return
+
+            # Reached end of loop
             if lp >= loop_len:
                 lp = 0
-                if self._last_rep:
+                if self._last_rep and alcoda_pos is None:
+                    # Original behavior: no alcoda defined, jump at loop boundary
                     self._loop_pos = 0
                     self._state    = 'CODA'
                     self._play_pos = self._coda_start
                     self._notify('CODA')
-                    return   # remaining frames are zeros (outdata zeroed at top)
+                    return
+                # alcoda is set but we passed it already this iteration: wrap and
+                # wait — next iteration will catch the alcoda crossing from lp=0
 
         self._loop_pos = lp
 
