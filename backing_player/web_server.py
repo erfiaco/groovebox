@@ -51,6 +51,30 @@ body{
   min-width:160px;text-align:center;
 }
 #bar-info{font-size:.9em;color:#666;min-height:1.2em}
+#file-list{
+  width:100%;max-width:420px;
+  border-radius:12px;
+  overflow:hidden;
+  background:#111;
+  display:none;
+}
+#file-list.visible{display:block}
+.fl-dir-label{
+  font-size:.75em;color:#555;letter-spacing:.06em;
+  padding:8px 14px;border-bottom:1px solid #1a1a1a;
+}
+.fl-item{
+  padding:13px 16px;
+  border-bottom:1px solid #1a1a1a;
+  font-size:.9em;color:#999;
+}
+.fl-item:last-child{border-bottom:none}
+.fl-item.sel{background:#102840;color:#7ec8ff;font-weight:700}
+.fl-wav::before{content:'\\266A  '}
+.fl-dir-item{color:#ffa726}
+.fl-dir-item::before{content:'\\25B8  ';color:#ffa726}
+.fl-up{color:#555;font-style:italic}
+.fl-up::before{content:'\\21A9  '}
 </style>
 </head>
 <body>
@@ -60,16 +84,19 @@ body{
 <div id="beat-wrap"><div id="beat"></div></div>
 <div id="state-badge">IDLE</div>
 <div id="bar-info"></div>
+<div id="file-list"></div>
 <script>
-const beatEl  = document.getElementById('beat');
-const stateEl = document.getElementById('state-badge');
-const trackEl = document.getElementById('track');
-const metaEl  = document.getElementById('meta');
-const barEl   = document.getElementById('bar-info');
-const connEl  = document.getElementById('conn');
+const beatEl     = document.getElementById('beat');
+const stateEl    = document.getElementById('state-badge');
+const trackEl    = document.getElementById('track');
+const metaEl     = document.getElementById('meta');
+const barEl      = document.getElementById('bar-info');
+const connEl     = document.getElementById('conn');
+const fileListEl = document.getElementById('file-list');
 
 const STATE_BG = {
   IDLE:      '#222',
+  ARMED:     '#4a2c00',
   COUNTDOWN: '#bf360c',
   PLAYING:   '#1b5e20',
   RECORDING: '#b71c1c',
@@ -83,6 +110,27 @@ function flash(isAccent) {
   beatEl.className = isAccent ? 'accent' : 'pulse';
   clearTimeout(beatTimer);
   beatTimer = setTimeout(() => { beatEl.className = ''; }, 120);
+}
+
+function renderList(sel) {
+  let html = '<div class="fl-dir-label">' + sel.dir + '</div>';
+  sel.items.forEach(function(item, i) {
+    const active = i === sel.idx ? ' sel' : '';
+    var cls = '', label = item.name;
+    if (item.kind === 'wav') {
+      cls = 'fl-wav';
+      label = item.name.replace(/_/g, ' ').replace(/\\.wav$/i, '');
+    } else if (item.kind === 'dir') {
+      cls = 'fl-dir-item';
+    } else if (item.kind === 'up') {
+      cls = 'fl-up';
+    }
+    html += '<div class="fl-item ' + cls + active + '">' + label + '</div>';
+  });
+  fileListEl.innerHTML = html;
+  fileListEl.className = 'visible';
+  var selEl = fileListEl.querySelector('.sel');
+  if (selEl) selEl.scrollIntoView({block: 'nearest'});
 }
 
 function connect() {
@@ -103,6 +151,11 @@ function connect() {
       trackEl.textContent = d.track ? d.track.replace(/_/g,' ') : '—';
       metaEl.textContent  = d.tempo ? d.tempo + ' BPM  ·  ' + d.time_sig : '';
       barEl.textContent   = d.bar > 0 ? 'Bar ' + d.bar + ' / ' + d.total_bars : '';
+      if (d.selection) {
+        renderList(d.selection);
+      } else {
+        fileListEl.className = '';
+      }
     }
   };
 }

@@ -27,8 +27,9 @@ MODE_PLAY      = 'PLAY'
 class BackingPlayer:
 
     def __init__(self):
-        self.mode        = MODE_SELECTION
-        self._track_name = ''
+        self.mode           = MODE_SELECTION
+        self._track_name    = ''
+        self._pending_start = False
 
         self.engine  = BackingEngine()
         self.browser = FileBrowser(TRACKS_DIR)
@@ -126,16 +127,22 @@ class BackingPlayer:
     def _play_toggle(self):
         state = self.engine.state
         if state == 'IDLE':
-            meta         = self.engine.meta
+            meta = self.engine.meta
             if meta is None:
                 return
-            cc_playback  = meta.get('cc_playback', 2)
-            beats        = int(str(meta['compas']).split('/')[0])
-            tempo        = meta['tempo']
-            bar_dur_sec  = (60.0 / tempo) * beats
-            self.metro.stop()  # stop preview so engine can restart with sync anchor
-            self.engine.start_play(self.metro, cc_playback, bar_dur_sec)
+            if self._pending_start:
+                # Second press cancels the armed flag
+                self._pending_start = False
+                self._push_web_state()
+                return
+            if self.metro.running:
+                # Arm: countdown will fire on next bar 1
+                self._pending_start = True
+                self._push_web_state()
+            else:
+                self._start_countdown_now()
         else:
+            self._pending_start = False
             self.engine.stop()
             self.metro.stop()
             # Restart preview metro so mobile still shows tempo
@@ -145,6 +152,17 @@ class BackingPlayer:
                 self.metro.beats_per_bar = int(str(meta['compas']).split('/')[0])
                 self.metro.start()
             self._update_display()
+
+    def _start_countdown_now(self):
+        meta = self.engine.meta
+        if meta is None:
+            return
+        cc_playback = meta.get('cc_playback', 2)
+        beats       = int(str(meta['compas']).split('/')[0])
+        tempo       = meta['tempo']
+        bar_dur_sec = (60.0 / tempo) * beats
+        self.metro.stop()
+        self.engine.start_play(self.metro, cc_playback, bar_dur_sec)
 
     def _save_recording(self):
         if not self.engine.recorded:
@@ -240,22 +258,47 @@ class BackingPlayer:
         print('\033[H\033[2J' + '\n'.join(lines), flush=True)
 
     def _on_beat(self, beat_in_bar, beats_per_bar):
-        self.web.push({
-            'type':          'beat',
-            'beat_in_bar':   beat_in_bar,
-            'beats_per_bar': beats_per_bar,
-            'is_accent':     beat_in_bar == 1,
-        })
+        # 4/4: flash on 1 and 3; other signatures: only beat 1
+        if beats_per_bar == 4:
+            should_flash = beat_in_bar in (1, 3)
+        else:
+            should_flash = beat_in_bar == 1
+
+        if should_flash:
+            self.web.push({
+                'type':          'beat',
+                'beat_in_bar':   beat_in_bar,
+                'beats_per_bar': beats_per_bar,
+                'is_accent':     beat_in_bar == 1,
+            })
+
+        if self._pending_start and beat_in_bar == 1:
+            self._pending_start = False
+            self._start_countdown_now()
 
     def _push_web_state(self):
         if self.mode == MODE_SELECTION:
-            self.web.push({'type': 'state', 'state': 'IDLE', 'track': '',
-                           'tempo': 0, 'time_sig': '', 'bar': 0, 'total_bars': 0})
+            items = [{'kind': k, 'name': n} for k, n in self.browser.items]
+            self.web.push({
+                'type':      'state',
+                'state':     'IDLE',
+                'track':     '',
+                'tempo':     0,
+                'time_sig':  '',
+                'bar':       0,
+                'total_bars': 0,
+                'selection': {
+                    'items': items,
+                    'idx':   self.browser.current_idx,
+                    'dir':   self.browser.get_dir_label(),
+                },
+            })
         else:
-            meta = self.engine.meta or {}
+            meta          = self.engine.meta or {}
+            display_state = 'ARMED' if self._pending_start else self.engine.state
             self.web.push({
                 'type':       'state',
-                'state':      self.engine.state,
+                'state':      display_state,
                 'track':      self._track_name,
                 'tempo':      meta.get('tempo', 0),
                 'time_sig':   str(meta.get('compas', '')),
@@ -285,7 +328,9 @@ class BackingPlayer:
             self.oled.close()
         except Exception:
             pass
-
+        
+        import subprocess
+        subprocess.Popen(["/usr/bin/python3", "/home/Javo/Proyects/boot_menu/boot_menu.py"])
 
 if __name__ == '__main__':
     player = BackingPlayer()
