@@ -27,9 +27,8 @@ MODE_PLAY      = 'PLAY'
 class BackingPlayer:
 
     def __init__(self):
-        self.mode           = MODE_SELECTION
-        self._track_name    = ''
-        self._pending_start = False
+        self.mode        = MODE_SELECTION
+        self._track_name = ''
 
         self.engine  = BackingEngine()
         self.browser = FileBrowser(TRACKS_DIR)
@@ -130,19 +129,8 @@ class BackingPlayer:
             meta = self.engine.meta
             if meta is None:
                 return
-            if self._pending_start:
-                # Second press cancels the armed flag
-                self._pending_start = False
-                self._push_web_state()
-                return
-            if self.metro.running:
-                # Arm: countdown will fire on next bar 1
-                self._pending_start = True
-                self._push_web_state()
-            else:
-                self._start_countdown_now()
+            self._start_countdown_now()
         else:
-            self._pending_start = False
             self.engine.stop()
             self.metro.stop()
             # Restart preview metro so mobile still shows tempo
@@ -272,10 +260,6 @@ class BackingPlayer:
                 'is_accent':     beat_in_bar == 1,
             })
 
-        if self._pending_start and beat_in_bar == 1:
-            self._pending_start = False
-            self._start_countdown_now()
-
     def _push_web_state(self):
         if self.mode == MODE_SELECTION:
             items = [{'kind': k, 'name': n} for k, n in self.browser.items]
@@ -294,11 +278,10 @@ class BackingPlayer:
                 },
             })
         else:
-            meta          = self.engine.meta or {}
-            display_state = 'ARMED' if self._pending_start else self.engine.state
+            meta = self.engine.meta or {}
             self.web.push({
                 'type':       'state',
-                'state':      display_state,
+                'state':      self.engine.state,
                 'track':      self._track_name,
                 'tempo':      meta.get('tempo', 0),
                 'time_sig':   str(meta.get('compas', '')),
@@ -328,9 +311,6 @@ class BackingPlayer:
             self.oled.close()
         except Exception:
             pass
-        
-        import subprocess
-        subprocess.Popen(["/usr/bin/python3", "/home/Javo/Proyects/boot_menu/boot_menu.py"])
 
 if __name__ == '__main__':
     player = BackingPlayer()

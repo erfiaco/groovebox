@@ -55,6 +55,8 @@ body{
   width:100%;max-width:420px;
   border-radius:12px;
   overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
   max-height:280px;
   background:#111;
   display:none;
@@ -96,7 +98,7 @@ const connEl     = document.getElementById('conn');
 const fileListEl = document.getElementById('file-list');
 
 const STATE_BG = {
-  IDLE:'#222', ARMED:'#4a2c00', COUNTDOWN:'#bf360c',
+  IDLE:'#222', COUNTDOWN:'#bf360c',
   PLAYING:'#1b5e20', RECORDING:'#b71c1c', LOOPING:'#4a148c', CODA:'#0d47a1',
 };
 
