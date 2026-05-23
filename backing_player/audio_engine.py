@@ -44,7 +44,8 @@ class BackingEngine:
         self._coda_end       = 0
         self._loop_len       = 0
         self._total_bars     = 0
-        self._alcoda_loop_pos = None  # sample offset within loop to jump to CODA early
+        self._alcoda_tema_pos  = None  # sample position in backing to jump to CODA from PLAYING
+        self._alcoda_bucle_pos = None  # sample offset within loop to jump to CODA from RECORDING/LOOPING
 
         # Playback cursors
         self._play_pos = 0   # position in backing array (PLAYING / RECORDING / CODA)
@@ -146,9 +147,11 @@ class BackingEngine:
 
         alcoda = meta.get('alcoda')
         if alcoda:
-            self._alcoda_loop_pos = (alcoda[0] - bucle[0]) * bs
+            self._alcoda_tema_pos  = (alcoda[0] - 1) * bs
+            self._alcoda_bucle_pos = (alcoda[1] - bucle[0]) * bs
         else:
-            self._alcoda_loop_pos = None
+            self._alcoda_tema_pos  = None
+            self._alcoda_bucle_pos = None
 
         self._rec_buffer = np.zeros((self._loop_len, CHANNELS), dtype=np.float32)
         self._recorded   = False
@@ -330,11 +333,27 @@ class BackingEngine:
         new_pos = pos + actual
         self._play_pos = new_pos
 
+        if state == 'PLAYING' and self._last_rep and self._alcoda_tema_pos is not None:
+            if new_pos >= self._alcoda_tema_pos:
+                self._state    = 'CODA'
+                self._play_pos = self._coda_start
+                self._notify('CODA')
+                return
+
         if state == 'PLAYING' and new_pos > self._bucle_start:
             self._rec_pos = 0
             self._state   = 'RECORDING'
             self._notify('RECORDING')
             return
+
+        if self._state == 'RECORDING' and self._last_rep and self._alcoda_bucle_pos is not None:
+            if new_pos - self._bucle_start >= self._alcoda_bucle_pos:
+                self._recorded = True
+                self._loop_pos = 0
+                self._state    = 'CODA'
+                self._play_pos = self._coda_start
+                self._notify('CODA')
+                return
 
         if self._state == 'RECORDING' and new_pos >= self._bucle_end:
             self._recorded = True
@@ -346,7 +365,7 @@ class BackingEngine:
         """Loop bucle section: backing slice + rec_buffer, mixed."""
         loop_start  = self._bucle_start
         loop_len    = self._loop_len
-        alcoda_pos  = self._alcoda_loop_pos
+        alcoda_pos  = self._alcoda_bucle_pos
         lp          = self._loop_pos
         vol         = self._volume
         backing     = self._backing
