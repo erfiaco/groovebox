@@ -54,13 +54,9 @@ body{
 #file-list{
   width:100%;max-width:420px;
   border-radius:12px;
-  overflow-y:scroll;
-  -webkit-overflow-scrolling:touch;
-  overscroll-behavior:contain;
-  max-height:280px;
+  overflow:hidden;
   background:#111;
   display:none;
-  position:relative;
 }
 #file-list.visible{display:block}
 .fl-dir-label{
@@ -222,32 +218,46 @@ document.addEventListener('touchstart', _unlock, { passive: true });
 document.addEventListener('click', _unlock);
 
 // ── File list ─────────────────────────────────────────────────────────────
+// Virtual window — renders only VISIBLE items centred on the selection,
+// mirroring the scroll_offset logic in boot_menu.py.
+var VISIBLE = 5;
 function renderList(sel) {
-  let html = '<div class="fl-dir-label">' + sel.dir + '</div>';
-  sel.items.forEach(function(item, i) {
-    const active = i === sel.idx ? ' sel' : '';
-    var cls = '', label = item.name;
+  var total = sel.items.length;
+  var idx   = sel.idx;
+
+  var wStart = idx - Math.floor(VISIBLE / 2);
+  if (wStart < 0) wStart = 0;
+  if (wStart + VISIBLE > total) wStart = Math.max(0, total - VISIBLE);
+  var wEnd = Math.min(wStart + VISIBLE, total);
+
+  var hasAbove = wStart > 0;
+  var hasBelow = wEnd < total;
+
+  var html = '<div class="fl-dir-label">'
+    + (hasAbove ? '▲ ' : '')
+    + sel.dir
+    + (hasBelow ? ' ▼' : '')
+    + '<span style="float:right">' + (idx + 1) + '/' + total + '</span>'
+    + '</div>';
+
+  for (var i = wStart; i < wEnd; i++) {
+    var item  = sel.items[i];
+    var cls   = '';
+    var label = item.name;
     if (item.kind === 'wav') {
       cls   = 'fl-wav';
-      label = item.name.replace(/_/g,' ').replace(/\\.wav$/i,'');
+      label = item.name.replace(/_/g,' ').replace(/\.wav$/i,'');
     } else if (item.kind === 'dir') {
       cls = 'fl-dir-item';
     } else if (item.kind === 'up') {
       cls = 'fl-up';
     }
+    var active = (i === idx) ? ' sel' : '';
     html += '<div class="fl-item ' + cls + active + '">' + label + '</div>';
-  });
+  }
+
   fileListEl.innerHTML = html;
   fileListEl.className = 'visible';
-  const selEl = fileListEl.querySelector('.sel');
-  if (selEl) {
-    const cRect = fileListEl.getBoundingClientRect();
-    const iRect = selEl.getBoundingClientRect();
-    if (iRect.bottom > cRect.bottom)
-      fileListEl.scrollTop += iRect.bottom - cRect.bottom;
-    else if (iRect.top < cRect.top)
-      fileListEl.scrollTop -= cRect.top - iRect.top;
-  }
 }
 
 // ── SSE ───────────────────────────────────────────────────────────────────
