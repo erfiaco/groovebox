@@ -195,7 +195,8 @@ class BackingEngine:
 
     def stop(self):
         self._stop_event.set()
-        self._state = 'IDLE'
+        self._last_rep = False
+        self._state    = 'IDLE'
         self._notify('IDLE')
 
     def toggle_last_rep(self):
@@ -335,6 +336,7 @@ class BackingEngine:
 
         if state == 'PLAYING' and self._last_rep and self._alcoda_tema_pos is not None:
             if new_pos >= self._alcoda_tema_pos:
+                self._last_rep = False
                 self._state    = 'CODA'
                 self._play_pos = self._coda_start
                 self._notify('CODA')
@@ -350,6 +352,7 @@ class BackingEngine:
             if new_pos - self._bucle_start >= self._alcoda_bucle_pos:
                 self._recorded = True
                 self._loop_pos = 0
+                self._last_rep = False
                 self._state    = 'CODA'
                 self._play_pos = self._coda_start
                 self._notify('CODA')
@@ -393,6 +396,7 @@ class BackingEngine:
             # Reached alcoda point — jump to CODA early
             if self._last_rep and alcoda_pos is not None and lp >= alcoda_pos:
                 self._loop_pos = 0
+                self._last_rep = False
                 self._state    = 'CODA'
                 self._play_pos = self._coda_start
                 self._notify('CODA')
@@ -404,6 +408,7 @@ class BackingEngine:
                 if self._last_rep and alcoda_pos is None:
                     # Original behavior: no alcoda defined, jump at loop boundary
                     self._loop_pos = 0
+                    self._last_rep = False
                     self._state    = 'CODA'
                     self._play_pos = self._coda_start
                     self._notify('CODA')
