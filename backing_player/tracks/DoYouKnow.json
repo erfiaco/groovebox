@@ -7,5 +7,6 @@
   "tema":   [2,  33],
   "bucle":  [34, 65],
   "coda":   [66, 76],
-  "alcoda": [32, 64]
+  "alcoda": [32, 64],
+  "graba":  "tema"
 }

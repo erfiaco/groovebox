@@ -44,8 +44,12 @@ class BackingEngine:
         self._coda_end       = 0
         self._loop_len       = 0
         self._total_bars     = 0
+        self._tema_start       = 0     # sample position where tema begins (for graba_en_tema)
         self._alcoda_tema_pos  = None  # sample position in backing to jump to CODA from PLAYING
         self._alcoda_bucle_pos = None  # sample offset within loop to jump to CODA from RECORDING/LOOPING
+
+        # Recording mode
+        self._graba_en_tema = False    # True → record during PLAYING/tema, play back in LOOPING
 
         # Playback cursors
         self._play_pos = 0   # position in backing array (PLAYING / RECORDING / CODA)
@@ -152,6 +156,11 @@ class BackingEngine:
         else:
             self._alcoda_tema_pos  = None
             self._alcoda_bucle_pos = None
+
+        graba = meta.get('graba', 'bucle')
+        self._graba_en_tema = (graba == 'tema')
+        tema = meta.get('tema')
+        self._tema_start = ((tema[0] - 1) * bs) if tema else 0
 
         self._rec_buffer = np.zeros((self._loop_len, CHANNELS), dtype=np.float32)
         self._recorded   = False
@@ -334,6 +343,14 @@ class BackingEngine:
         new_pos = pos + actual
         self._play_pos = new_pos
 
+        # ── graba_en_tema: PLAYING → RECORDING at tema_start ───────────────
+        if state == 'PLAYING' and self._graba_en_tema and new_pos >= self._tema_start:
+            self._rec_pos = 0
+            self._state   = 'RECORDING'
+            self._notify('RECORDING')
+            return
+
+        # ── Alcoda from PLAYING (original / graba_en_tema before tema_start) ─
         if state == 'PLAYING' and self._last_rep and self._alcoda_tema_pos is not None:
             if new_pos >= self._alcoda_tema_pos:
                 self._last_rep = False
@@ -342,12 +359,33 @@ class BackingEngine:
                 self._notify('CODA')
                 return
 
+        # ── Original: PLAYING → RECORDING at bucle_start ────────────────────
         if state == 'PLAYING' and new_pos > self._bucle_start:
             self._rec_pos = 0
             self._state   = 'RECORDING'
             self._notify('RECORDING')
             return
 
+        # ── graba_en_tema: alcoda from RECORDING (tema phase) ───────────────
+        if self._graba_en_tema and self._state == 'RECORDING' and self._last_rep and self._alcoda_tema_pos is not None:
+            if new_pos >= self._alcoda_tema_pos:
+                self._recorded = True
+                self._loop_pos = 0
+                self._last_rep = False
+                self._state    = 'CODA'
+                self._play_pos = self._coda_start
+                self._notify('CODA')
+                return
+
+        # ── graba_en_tema: RECORDING → LOOPING at bucle_start ───────────────
+        if self._graba_en_tema and self._state == 'RECORDING' and new_pos >= self._bucle_start:
+            self._recorded = True
+            self._loop_pos = 0
+            self._state    = 'LOOPING'
+            self._notify('LOOPING')
+            return
+
+        # ── Original: alcoda from RECORDING (bucle phase) ───────────────────
         if self._state == 'RECORDING' and self._last_rep and self._alcoda_bucle_pos is not None:
             if new_pos - self._bucle_start >= self._alcoda_bucle_pos:
                 self._recorded = True
@@ -358,6 +396,7 @@ class BackingEngine:
                 self._notify('CODA')
                 return
 
+        # ── Original: RECORDING → LOOPING at bucle_end ──────────────────────
         if self._state == 'RECORDING' and new_pos >= self._bucle_end:
             self._recorded = True
             self._loop_pos = 0
