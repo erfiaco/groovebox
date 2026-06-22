@@ -45,9 +45,13 @@ except:
 menu_items = [
     "Looper",
     "Sync_loop",
+    "4trackloop",
     "Practice Player",
+    "Backing_player",
     "Bluetooth Rec",
     "Metronome",
+    "Hotspot",
+    "WIFI",
     "Shutdown",
     "Exit"
 ]
@@ -243,6 +247,68 @@ def select():
         # Termina boot_menu
         os._exit(0)
         
+    elif selection == "4trackloop":
+        print("Arrancando looper...")
+        
+        # Mensaje en pantalla
+        img = Image.new("1", (128, 64))
+        draw = ImageDraw.Draw(img)
+        draw.text((15, 25), "Starting", font=font, fill=255)
+        draw.text((10, 40), "Looper...", font=font_small, fill=255)
+        device.display(img)
+        time.sleep(0.5)
+        
+        # Limpia pantalla
+        img = Image.new("1", (128, 64))
+        device.display(img)
+        
+        # Limpia GPIO
+        GPIO.cleanup()
+        
+        # Lanza practice player
+        subprocess.Popen(
+            ["/home/Javo/Proyects/raspi-looper/rlooper_env/bin/python", "-u", "main.py"],
+            cwd="/home/Javo/Proyects/raspi-looper",
+            stdin=subprocess.DEVNULL,
+            stdout=open('/tmp/raspi-looper.log', 'w', buffering=1),
+            stderr=open('/tmp/raspi-looper_errors.log', 'w', buffering=1),
+            start_new_session=True
+        )
+        
+        # Termina boot_menu
+        os._exit(0)
+        
+    elif selection == "Backing_player":
+        print("Backing...")
+        
+        # Mensaje en pantalla
+        img = Image.new("1", (128, 64))
+        draw = ImageDraw.Draw(img)
+        draw.text((15, 25), "Starting", font=font, fill=255)
+        draw.text((10, 40), "Backing...", font=font_small, fill=255)
+        device.display(img)
+        time.sleep(0.5)
+        
+        # Limpia pantalla
+        img = Image.new("1", (128, 64))
+        device.display(img)
+        
+        # Limpia GPIO
+        GPIO.cleanup()
+        
+        # Lanza practice player
+        subprocess.Popen(
+            ["/home/Javo/Proyects/Looper/looper_env/bin/python", "-u", "main.py"],
+            cwd="/home/Javo/Proyects/backing_player",
+            stdin=subprocess.DEVNULL,
+            stdout=open('/tmp/backing_player.log', 'w', buffering=1),
+            stderr=open('/tmp/backing_player_errors.log', 'w', buffering=1),
+            start_new_session=True
+        )
+        
+        # Termina boot_menu
+        os._exit(0)
+        
     elif selection == "Metronome":
         print("Arrancando Metronome...")
         
@@ -323,7 +389,40 @@ def select():
         
         GPIO.cleanup()
         subprocess.run(["sudo", "shutdown", "-h", "now"])
+
+
+    elif selection == "Hotspot":
+        img = Image.new("1", (128, 64))
+        draw = ImageDraw.Draw(img)
+        draw.text((15, 20), "Switching to", font=font_small, fill=255)
+        draw.text((15, 35), "Hotspot...", font=font, fill=255)
+        device.display(img)
+
+        subprocess.Popen(
+            ["sudo", "bash", "/home/Javo/Proyects/boot_menu/switch_hotspot.sh"],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=open('/tmp/switch_hotspot.log', 'w'),
+            stderr=subprocess.STDOUT
+        )
+        os._exit(0)
+
+    elif selection == "WIFI":
+        img = Image.new("1", (128, 64))
+        draw = ImageDraw.Draw(img)
+        draw.text((15, 20), "Switching to", font=font_small, fill=255)
+        draw.text((25, 35), "WiFi...", font=font, fill=255)
+        device.display(img)
     
+        subprocess.Popen(
+            ["sudo", "bash", "/home/Javo/Proyects/boot_menu/switch_wifi.sh"],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=open('/tmp/switch_wifi.log', 'w'),
+            stderr=subprocess.STDOUT
+        )
+        os._exit(0)
+
     elif selection == "Exit":
         cleanup_and_exit()
 
