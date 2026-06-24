@@ -8,9 +8,7 @@ venv/
 env/
 
 # Audio files (tracks are local, not versioned)
-tracks/*.wav
-tracks/**/*.wav
-tracks/recordings/
+tracks/
 
 # OS
 .DS_Store
