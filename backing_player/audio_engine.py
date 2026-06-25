@@ -454,7 +454,8 @@ class BackingEngine:
             rem    -= chunk
 
             # Reached alcoda point — jump to CODA early
-            if self._last_rep and alcoda_pos is not None and lp >= alcoda_pos:
+            # alcoda_pos==0 means "at loop boundary", handled below
+            if self._last_rep and alcoda_pos is not None and alcoda_pos > 0 and lp >= alcoda_pos:
                 self._loop_pos = 0
                 self._last_rep = False
                 self._state    = 'CODA'
@@ -465,8 +466,8 @@ class BackingEngine:
             # Reached end of loop
             if lp >= loop_len:
                 lp = 0
-                if self._last_rep and alcoda_pos is None:
-                    # Original behavior: no alcoda defined, jump at loop boundary
+                if self._last_rep and (alcoda_pos is None or alcoda_pos == 0):
+                    # alcoda_pos==0 means jump at loop boundary (bar 1 of next iteration)
                     self._loop_pos = 0
                     self._last_rep = False
                     self._state    = 'CODA'
