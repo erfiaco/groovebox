@@ -50,6 +50,7 @@ class BackingEngine:
 
         # Recording mode
         self._graba_en_tema = False    # True → record during PLAYING/tema, play back in LOOPING
+        self._no_grabar     = False    # True → loop without recording input at all
 
         # Playback cursors
         self._play_pos = 0   # position in backing array (PLAYING / RECORDING / CODA)
@@ -140,17 +141,31 @@ class BackingEngine:
         bs     = int(round((60.0 / tempo) * beats * SAMPLE_RATE))
         self._bar_samples = bs
 
-        bucle = meta['bucle']
-        coda  = meta['coda']
-        self._bucle_start = (bucle[0] - 1) * bs
-        self._bucle_end   = bucle[1] * bs
-        self._coda_start  = (coda[0] - 1) * bs
-        self._coda_end    = min(coda[1] * bs, len(audio))
-        self._loop_len       = self._bucle_end - self._bucle_start
-        self._total_bars     = meta['tot_cc']
+        bucle = meta.get('bucle')
+        coda  = meta.get('coda')
+        n     = len(audio)
+
+        if bucle is not None:
+            self._bucle_start = (bucle[0] - 1) * bs
+            self._bucle_end   = bucle[1] * bs
+            self._loop_len    = self._bucle_end - self._bucle_start
+        else:
+            # No loop section: set beyond audio so PLAYING runs to end naturally
+            self._bucle_start = n + 1
+            self._bucle_end   = n + 2
+            self._loop_len    = 0
+
+        if coda is not None:
+            self._coda_start = (coda[0] - 1) * bs
+            self._coda_end   = min(coda[1] * bs, n)
+        else:
+            self._coda_start = n + 1
+            self._coda_end   = n + 2
+
+        self._total_bars = meta['tot_cc']
 
         alcoda = meta.get('alcoda')
-        if alcoda:
+        if alcoda is not None and bucle is not None:
             self._alcoda_tema_pos  = (alcoda[0] - 1) * bs
             self._alcoda_bucle_pos = (alcoda[1] - bucle[0]) * bs
         else:
@@ -159,10 +174,11 @@ class BackingEngine:
 
         graba = meta.get('graba', 'bucle')
         self._graba_en_tema = (graba == 'tema')
+        self._no_grabar     = (graba == 'none')
         tema = meta.get('tema')
         self._tema_start = ((tema[0] - 1) * bs) if tema else 0
 
-        self._rec_buffer = np.zeros((self._loop_len, CHANNELS), dtype=np.float32)
+        self._rec_buffer = np.zeros((max(self._loop_len, 0), CHANNELS), dtype=np.float32)
         self._recorded   = False
         self._last_rep   = False
         self._volume     = 1.0
@@ -359,11 +375,16 @@ class BackingEngine:
                 self._notify('CODA')
                 return
 
-        # ── Original: PLAYING → RECORDING at bucle_start ────────────────────
+        # ── Original: PLAYING → RECORDING (or LOOPING if no_grabar) at bucle_start ─
         if state == 'PLAYING' and new_pos > self._bucle_start:
-            self._rec_pos = 0
-            self._state   = 'RECORDING'
-            self._notify('RECORDING')
+            if self._no_grabar:
+                self._loop_pos = 0
+                self._state    = 'LOOPING'
+                self._notify('LOOPING')
+            else:
+                self._rec_pos = 0
+                self._state   = 'RECORDING'
+                self._notify('RECORDING')
             return
 
         # ── graba_en_tema: alcoda from RECORDING (tema phase) ───────────────
