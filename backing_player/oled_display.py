@@ -94,7 +94,6 @@ class OledDisplay:
         # Row 1: state badge
         state_labels = {
             'IDLE':      'IDLE',
-            'COUNTDOWN': 'COUNT',
             'PLAYING':   'PLAY',
             'RECORDING': 'REC *',
             'LOOPING':   'LOOP',

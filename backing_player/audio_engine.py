@@ -3,7 +3,6 @@ BackingEngine: plays a backing WAV and records one layer on the loop section.
 
 States:
   IDLE       - stopped, no audio
-  COUNTDOWN  - metro LED counting down, audio silent
   PLAYING    - playing backing from start up to bucle_start
   RECORDING  - playing bucle section and capturing input
   LOOPING    - looping bucle section (backing + rec_buffer)
@@ -17,7 +16,6 @@ Recording architecture:
 
 import queue
 import threading
-import time
 
 import numpy as np
 import sounddevice as sd
@@ -66,9 +64,6 @@ class BackingEngine:
         self._state    = 'IDLE'
         self._last_rep = False
         self._volume   = 1.0
-
-        self._stop_event = threading.Event()
-        self._cd_thread  = None
 
         # Streams
         self._in_stream  = None
@@ -207,19 +202,31 @@ class BackingEngine:
         print(f"[BackingEngine] input  latency: {self._in_stream.latency*1000:.1f} ms")
         print(f"[BackingEngine] output latency: {self._out_stream.latency*1000:.1f} ms")
 
-    def start_play(self, metro_led, cc_playback, bar_dur_sec):
+    def start_play(self):
         if self._backing is None or self._state != 'IDLE':
             return
-        self._stop_event.clear()
-        self._cd_thread = threading.Thread(
-            target=self._run_countdown,
-            args=(metro_led, cc_playback, bar_dur_sec),
-            daemon=True, name='backing-countdown'
-        )
-        self._cd_thread.start()
+        if self._out_stream is not None and not self._out_stream.active:
+            print("[BackingEngine] stream inactive — restarting")
+            for s in (self._in_stream, self._out_stream):
+                try:
+                    s.stop()
+                    s.close()
+                except Exception:
+                    pass
+            self._in_stream = self._out_stream = None
+            self.start_streams()
+        self._play_pos   = 0
+        self._loop_pos   = 0
+        self._rec_pos    = 0
+        if self._rec_buffer is not None:
+            self._rec_buffer[:] = 0
+        self._recorded   = False
+        self._mute_input = False
+        self._volume     = 1.0
+        self._state = 'PLAYING'
+        self._notify('PLAYING')
 
     def stop(self):
-        self._stop_event.set()
         self._last_rep = False
         self._state    = 'IDLE'
         self._notify('IDLE')
@@ -250,7 +257,6 @@ class BackingEngine:
             return False
 
     def close(self):
-        self._stop_event.set()
         for stream in (self._in_stream, self._out_stream):
             if stream:
                 try:
@@ -277,45 +283,6 @@ class BackingEngine:
         except queue.Full:
             pass
 
-    def _wait_until(self, target):
-        remaining = target - time.perf_counter()
-        if remaining > 0.003:
-            self._stop_event.wait(timeout=remaining - 0.002)
-        while time.perf_counter() < target:
-            pass
-
-    # ── Countdown thread ─────────────────────────────────────────────────
-
-    def _run_countdown(self, metro_led, cc_playback, bar_dur_sec):
-        self._state = 'COUNTDOWN'
-        self._notify('COUNTDOWN')
-
-        anchor = time.perf_counter()
-        metro_led.bpm           = self._meta['tempo']
-        metro_led.beats_per_bar = int(str(self._meta['compas']).split('/')[0])
-        metro_led.start(anchor=anchor)
-
-        target = anchor + cc_playback * bar_dur_sec
-        self._wait_until(target)
-        metro_led.stop()
-
-        if self._stop_event.is_set():
-            self._state = 'IDLE'
-            self._notify('IDLE')
-            return
-
-        self._play_pos   = 0
-        self._loop_pos   = 0
-        self._rec_pos    = 0
-        if self._rec_buffer is not None:
-            self._rec_buffer[:] = 0
-        self._recorded   = False
-        self._mute_input = False
-        self._volume     = 1.0
-
-        self._state = 'PLAYING'
-        self._notify('PLAYING')
-
     # ── Audio callbacks ──────────────────────────────────────────────────
 
     def _input_cb(self, indata, frames, time_info, status):
@@ -332,7 +299,7 @@ class BackingEngine:
         outdata[:] = 0
         state = self._state
 
-        if state in ('IDLE', 'COUNTDOWN'):
+        if state == 'IDLE':
             return
         if state in ('PLAYING', 'RECORDING'):
             self._cb_linear(outdata, frames)

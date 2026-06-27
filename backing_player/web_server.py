@@ -95,8 +95,7 @@ const connEl     = document.getElementById('conn');
 const fileListEl = document.getElementById('file-list');
 
 const STATE_BG = {
-  IDLE:'#222', COUNTDOWN:'#bf360c',
-  PLAYING:'#1b5e20', RECORDING:'#b71c1c', LOOPING:'#4a148c', CODA:'#0d47a1',
+  IDLE:'#222', PLAYING:'#1b5e20', RECORDING:'#b71c1c', LOOPING:'#4a148c', CODA:'#0d47a1',
 };
 
 // ── Flash visual ──────────────────────────────────────────────────────────

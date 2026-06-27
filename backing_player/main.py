@@ -12,7 +12,6 @@ from datetime import datetime
 from audio_engine    import BackingEngine
 from buttons_manager import ButtonsManager
 from file_browser    import FileBrowser
-from metro_led       import MetroLed
 from oled_display    import OledDisplay
 from web_server      import WebServer
 
@@ -33,7 +32,6 @@ class BackingPlayer:
         self.engine  = BackingEngine()
         self.browser = FileBrowser(TRACKS_DIR)
         self.oled    = OledDisplay()
-        self.metro   = MetroLed()
         self.web     = WebServer()
         self.buttons = ButtonsManager(
             on_btn1      = self._on_btn1,
@@ -43,7 +41,6 @@ class BackingPlayer:
             on_btn4_hold = self._on_btn4_hold,
         )
         self.engine.on_state_change = self._on_engine_state
-        self.metro.on_beat = self._on_beat
 
     # ── Main loop ────────────────────────────────────────────────────────
 
@@ -110,10 +107,6 @@ class BackingPlayer:
                 self._track_name = os.path.splitext(os.path.basename(path))[0]
                 self.mode = MODE_PLAY
                 self.oled.show_message(f'Loaded: {self._track_name}')
-                # Start preview metro so mobile and LED show tempo immediately
-                self.metro.bpm           = meta['tempo']
-                self.metro.beats_per_bar = int(str(meta['compas']).split('/')[0])
-                self.metro.start()
                 time.sleep(0.8)
             except Exception as e:
                 print(f"[Main] load error: {e}")
@@ -126,31 +119,12 @@ class BackingPlayer:
     def _play_toggle(self):
         state = self.engine.state
         if state == 'IDLE':
-            meta = self.engine.meta
-            if meta is None:
+            if self.engine.meta is None:
                 return
-            self._start_countdown_now()
+            self.engine.start_play()
         else:
             self.engine.stop()
-            self.metro.stop()
-            # Restart preview metro so mobile still shows tempo
-            if self.engine.meta:
-                meta = self.engine.meta
-                self.metro.bpm           = meta['tempo']
-                self.metro.beats_per_bar = int(str(meta['compas']).split('/')[0])
-                self.metro.start()
             self._update_display()
-
-    def _start_countdown_now(self):
-        meta = self.engine.meta
-        if meta is None:
-            return
-        cc_playback = meta.get('cc_playback', 2)
-        beats       = int(str(meta['compas']).split('/')[0])
-        tempo       = meta['tempo']
-        bar_dur_sec = (60.0 / tempo) * beats
-        self.metro.stop()
-        self.engine.start_play(self.metro, cc_playback, bar_dur_sec)
 
     def _save_recording(self):
         if not self.engine.recorded:
@@ -168,7 +142,6 @@ class BackingPlayer:
 
     def _go_to_selection(self):
         self.engine.stop()
-        self.metro.stop()
         self.mode = MODE_SELECTION
         self._update_display()
 
@@ -204,7 +177,6 @@ class BackingPlayer:
     def _print_status(self):
         STATE_ICON = {
             'IDLE':      '■  IDLE',
-            'COUNTDOWN': '◆  COUNTDOWN',
             'PLAYING':   '▶  PLAYING',
             'RECORDING': '●  RECORDING',
             'LOOPING':   '↺  LOOPING',
@@ -245,21 +217,6 @@ class BackingPlayer:
             ]
         print('\033[H\033[2J' + '\n'.join(lines), flush=True)
 
-    def _on_beat(self, beat_in_bar, beats_per_bar):
-        # 4/4: flash on 1 and 3; other signatures: only beat 1
-        if beats_per_bar == 4:
-            should_flash = beat_in_bar in (1, 3)
-        else:
-            should_flash = beat_in_bar == 1
-
-        if should_flash:
-            self.web.push({
-                'type':          'beat',
-                'beat_in_bar':   beat_in_bar,
-                'beats_per_bar': beats_per_bar,
-                'is_accent':     beat_in_bar == 1,
-            })
-
     def _push_web_state(self):
         if self.mode == MODE_SELECTION:
             items = [{'kind': k, 'name': n} for k, n in self.browser.items]
@@ -298,10 +255,6 @@ class BackingPlayer:
     def _cleanup(self):
         try:
             self.engine.close()
-        except Exception:
-            pass
-        try:
-            self.metro.close()
         except Exception:
             pass
         try:
