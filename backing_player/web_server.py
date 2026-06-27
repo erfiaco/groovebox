@@ -75,6 +75,29 @@ body{
 .fl-dir-item::before{content:'\\25B8  ';color:#ffa726}
 .fl-up{color:#555;font-style:italic}
 .fl-up::before{content:'\\21A9  '}
+#status-row{display:flex;align-items:center;gap:12px}
+#status-dot{
+  width:14px;height:14px;border-radius:50%;
+  background:#333;flex-shrink:0;
+  transition:background .2s,box-shadow .2s;
+}
+#status-dot.playing{background:#4caf50;box-shadow:0 0 10px #4caf5099}
+#status-dot.recording{background:#f44336;box-shadow:0 0 12px #f4433699}
+#sections{
+  width:100%;max-width:420px;
+  border-radius:12px;overflow:hidden;
+  background:#111;display:none;
+}
+#sections.visible{display:block}
+.sec-row{
+  display:flex;align-items:center;
+  padding:10px 14px;border-bottom:1px solid #1a1a1a;
+  font-size:.88em;
+}
+.sec-row:last-child{border-bottom:none}
+.sec-name{flex:1;color:#ccc}
+.sec-bars{color:#555;margin-right:8px}
+.sec-rec{color:#f44336;font-size:.78em;font-weight:700;letter-spacing:.05em}
 </style>
 </head>
 <body>
@@ -82,16 +105,22 @@ body{
 <div id="track">—</div>
 <div id="meta"></div>
 <div id="beat-wrap"><div id="beat"></div></div>
+<div id="status-row">
+<div id="status-dot"></div>
 <div id="state-badge">IDLE</div>
+</div>
 <div id="bar-info"></div>
+<div id="sections"></div>
 <div id="file-list"></div>
 <script>
 const beatEl     = document.getElementById('beat');
 const stateEl    = document.getElementById('state-badge');
+const dotEl      = document.getElementById('status-dot');
 const trackEl    = document.getElementById('track');
 const metaEl     = document.getElementById('meta');
 const barEl      = document.getElementById('bar-info');
 const connEl     = document.getElementById('conn');
+const sectionsEl = document.getElementById('sections');
 const fileListEl = document.getElementById('file-list');
 
 const STATE_BG = {
@@ -216,6 +245,22 @@ function _unlock() {
 document.addEventListener('touchstart', _unlock, { passive: true });
 document.addEventListener('click', _unlock);
 
+// ── Section list ─────────────────────────────────────────────────────────
+function renderSections(secs) {
+  if (!secs || !secs.length) { sectionsEl.className = ''; return; }
+  var html = '';
+  for (var i = 0; i < secs.length; i++) {
+    var s = secs[i];
+    html += '<div class="sec-row">';
+    html += '<span class="sec-name">' + s.name + '</span>';
+    html += '<span class="sec-bars">' + s.bars + ' cc</span>';
+    if (s.rec) html += '<span class="sec-rec">● REC</span>';
+    html += '</div>';
+  }
+  sectionsEl.innerHTML = html;
+  sectionsEl.className = 'visible';
+}
+
 // ── File list ─────────────────────────────────────────────────────────────
 // Virtual window — renders only VISIBLE items centred on the selection,
 // mirroring the scroll_offset logic in boot_menu.py.
@@ -275,6 +320,8 @@ function connect() {
     } else if (d.type === 'state') {
       stateEl.textContent      = d.state;
       stateEl.style.background = STATE_BG[d.state] || '#222';
+      dotEl.className = d.state === 'RECORDING' ? 'recording'
+                      : d.state !== 'IDLE'       ? 'playing' : '';
       trackEl.textContent      = d.track ? d.track.replace(/_/g,' ') : '—';
       metaEl.textContent       = d.tempo ? d.tempo + ' BPM  ·  ' + d.time_sig : '';
       var barText = d.bar > 0 ? 'Bar ' + d.bar + ' / ' + d.total_bars : '';
@@ -288,8 +335,13 @@ function connect() {
         _curBpm = bpm;
         _startScheduler(bpm, bpb);
       }
-      if (d.selection) renderList(d.selection);
-      else             fileListEl.className = '';
+      if (d.selection) {
+        renderList(d.selection);
+        sectionsEl.className = '';
+      } else {
+        fileListEl.className = '';
+        if (d.sections !== undefined) renderSections(d.sections);
+      }
     }
   };
 }

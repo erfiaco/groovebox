@@ -296,11 +296,13 @@ class BackingEngine:
                 self._rec_pos = end
 
     def _output_cb(self, outdata, frames, time_info, status):
-        outdata[:] = 0
         state = self._state
 
         if state == 'IDLE':
+            outdata[:] = 1e-6  # inaudible keepalive (-120 dB) — prevents DAC auto-mute
             return
+
+        outdata[:] = 0
         if state in ('PLAYING', 'RECORDING'):
             self._cb_linear(outdata, frames)
         elif state == 'LOOPING':

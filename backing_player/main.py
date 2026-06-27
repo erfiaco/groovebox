@@ -235,7 +235,25 @@ class BackingPlayer:
                 },
             })
         else:
-            meta = self.engine.meta or {}
+            meta  = self.engine.meta or {}
+            tema  = meta.get('tema')
+            bucle = meta.get('bucle')
+            coda  = meta.get('coda')
+            graba = meta.get('graba', 'bucle')
+            sections = []
+            first = tema[0] if tema else (bucle[0] if bucle else None)
+            if first and first > 1:
+                sections.append({'name': 'Intro', 'bars': first - 1})
+            if tema:
+                s = {'name': 'Tema', 'bars': tema[1] - tema[0] + 1}
+                if graba == 'tema': s['rec'] = True
+                sections.append(s)
+            if bucle:
+                s = {'name': 'Bucle', 'bars': bucle[1] - bucle[0] + 1}
+                if graba == 'bucle': s['rec'] = True
+                sections.append(s)
+            if coda:
+                sections.append({'name': 'Coda', 'bars': coda[1] - coda[0] + 1})
             self.web.push({
                 'type':       'state',
                 'state':      self.engine.state,
@@ -245,6 +263,7 @@ class BackingPlayer:
                 'bar':        self.engine.current_bar,
                 'total_bars': self.engine.total_bars,
                 'last_rep':   self.engine.last_rep,
+                'sections':   sections,
             })
 
     def _on_engine_state(self, state):
