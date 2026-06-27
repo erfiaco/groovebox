@@ -81,14 +81,13 @@ class BackingPlayer:
             self.browser.next_item()
             self._update_display()
         else:
-            self.engine.toggle_silence()
-            self._update_display()
+            self._navigate_track(+1)
 
     def _on_btn4_tap(self):
         if self.mode == MODE_SELECTION:
             self._exit_to_boot()
         elif self.mode == MODE_PLAY:
-            self._save_recording()
+            self._navigate_track(-1)
 
     def _on_btn4_hold(self):
         if self.mode == MODE_PLAY:
@@ -138,6 +137,41 @@ class BackingPlayer:
         ok   = self.engine.save_recording(path)
         self.oled.show_message('Saved!' if ok else 'Save error')
         time.sleep(1.0)
+        self._update_display()
+
+    def _navigate_track(self, direction):
+        n = len(self.browser.items)
+        if n == 0:
+            return
+        for _ in range(n):
+            if direction > 0:
+                self.browser.next_item()
+            else:
+                self.browser.prev_item()
+            kind, _ = self.browser.items[self.browser.current_idx]
+            if kind == 'wav':
+                break
+        else:
+            return  # no WAV found in list
+        kind, path = self.browser.select()
+        if kind != 'wav':
+            self._update_display()
+            return
+        json_path = os.path.splitext(path)[0] + '.json'
+        try:
+            with open(json_path) as f:
+                meta = json.load(f)
+            self.engine.stop()
+            self.engine.load_track(path, meta)
+            self._track_name = os.path.splitext(os.path.basename(path))[0]
+            self.mode = MODE_PLAY
+            self.oled.show_message(f'Loaded: {self._track_name}')
+            time.sleep(0.8)
+            self.engine.start_play()
+        except Exception as e:
+            print(f"[Main] nav error: {e}")
+            self.oled.show_message(f'Error: {e}')
+            time.sleep(1.5)
         self._update_display()
 
     def _go_to_selection(self):
