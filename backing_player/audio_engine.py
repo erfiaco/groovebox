@@ -16,6 +16,7 @@ Recording architecture:
 
 import queue
 import threading
+import time
 
 import numpy as np
 import sounddevice as sd
@@ -230,6 +231,12 @@ class BackingEngine:
         self._last_rep = False
         self._state    = 'IDLE'
         self._notify('IDLE')
+
+    def stop_soft(self):
+        """Ramp volume to zero before stopping to prevent audible click."""
+        self._volume = 0.0
+        time.sleep(0.03)  # ~30ms: lets audio callbacks drain at BLOCKSIZE=256
+        self.stop()
 
     def toggle_last_rep(self):
         self._last_rep = not self._last_rep

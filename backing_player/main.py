@@ -161,13 +161,12 @@ class BackingPlayer:
         try:
             with open(json_path) as f:
                 meta = json.load(f)
-            self.engine.stop()
+            self.engine.stop_soft()
             self.engine.load_track(path, meta)
             self._track_name = os.path.splitext(os.path.basename(path))[0]
             self.mode = MODE_PLAY
             self.oled.show_message(f'Loaded: {self._track_name}')
             time.sleep(0.8)
-            self.engine.start_play()
         except Exception as e:
             print(f"[Main] nav error: {e}")
             self.oled.show_message(f'Error: {e}')
