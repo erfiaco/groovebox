@@ -186,21 +186,48 @@ class BackingEngine:
               f"  coda={self._coda_start}-{self._coda_end}")
 
     def start_streams(self):
-        if self._in_stream is not None:
+        if self._out_stream is not None:
             return
-        self._in_stream = sd.InputStream(
-            samplerate=SAMPLE_RATE, channels=CHANNELS,
-            callback=self._input_cb, blocksize=BLOCKSIZE,
-            latency='low', dtype='float32'
-        )
+        # Salida: default de ALSA (cable, o BT si bt_menu escribió ~/.asoundrc);
+        # si no se puede abrir, caemos al AudioInjector
+        lat_out = 'low'
+        try:
+            sd.check_output_settings(device='default',
+                                     samplerate=SAMPLE_RATE, channels=CHANNELS)
+            salida = 'default'
+            try:
+                with open('/home/Javo/.asoundrc') as f:
+                    if 'generado por bt_menu' in f.read():
+                        # BT necesita buffer grande o el audio sale entrecortado
+                        lat_out = 'high'
+                        print("[BackingEngine] salida Bluetooth, latency=high")
+            except FileNotFoundError:
+                pass
+        except Exception as e:
+            print(f"[BackingEngine] default no disponible ({e}); usando AudioInjector")
+            salida = 'audioinjector'
+        # Entrada: siempre AudioInjector (el BT no captura); sin entrada
+        # se sigue reproduciendo, solo se pierde la grabación
+        try:
+            self._in_stream = sd.InputStream(
+                device='audioinjector',
+                samplerate=SAMPLE_RATE, channels=CHANNELS,
+                callback=self._input_cb, blocksize=BLOCKSIZE,
+                latency='low', dtype='float32'
+            )
+        except Exception as e:
+            print(f"[BackingEngine] sin entrada de audio ({e}) — grabación desactivada")
+            self._in_stream = None
         self._out_stream = sd.OutputStream(
+            device=salida,
             samplerate=SAMPLE_RATE, channels=CHANNELS,
             callback=self._output_cb, blocksize=BLOCKSIZE,
-            latency='low', dtype='float32'
+            latency=lat_out, dtype='float32'
         )
-        self._in_stream.start()
+        if self._in_stream is not None:
+            self._in_stream.start()
+            print(f"[BackingEngine] input  latency: {self._in_stream.latency*1000:.1f} ms")
         self._out_stream.start()
-        print(f"[BackingEngine] input  latency: {self._in_stream.latency*1000:.1f} ms")
         print(f"[BackingEngine] output latency: {self._out_stream.latency*1000:.1f} ms")
 
     def start_play(self):
