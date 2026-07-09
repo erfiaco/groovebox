@@ -1,0 +1,11 @@
+{
+  "tempo": 160,
+  "compas": "4/4",
+  "cc_playback": 0,
+  "tot_cc": 82,
+  "intro":  [1, 2],
+  "tema":   [3,  34],
+  "bucle":  [35, 66],
+  "coda":   [67, 82],
+  "alcoda": [3, 35]
+}

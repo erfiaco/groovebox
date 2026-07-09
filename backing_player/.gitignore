@@ -7,8 +7,9 @@ __pycache__/
 venv/
 env/
 
-# Audio files (tracks are local, not versioned)
-tracks/
+# Audio files (tracks are local, not versioned), but JSON metadata is versioned
+tracks/*
+!tracks/*.json
 
 # OS
 .DS_Store
