@@ -4,8 +4,8 @@
   "cc_playback": 0,
   "tot_cc": 51,
   "intro":  [1,  2],
-  "tema":   [3,  40],
-  "bucle": [3, 40],
-  "coda":   [41, 51],
+  "tema":   [3,  42],
+  "bucle": [3, 42],
+  "coda":   [43, 51],
   "graba":  "none"
 }

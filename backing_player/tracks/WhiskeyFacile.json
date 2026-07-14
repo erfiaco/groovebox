@@ -7,5 +7,6 @@
   "tema":   [3,  50],
   "bucle": [51, 82],
   "coda":   [83, 95],
+  "alcoda": [49, 81],
   "graba":  "none"
 }
