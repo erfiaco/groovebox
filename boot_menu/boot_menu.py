@@ -8,7 +8,7 @@ Botones directos (solo en boot_menu):
 - Boton1 (GPIO6)  -> WiFi
 - Boton2 (GPIO26) -> Hotspot
 - Boton3 (GPIO13) -> Bluetooth (bt_menu)
-- Boton4 (GPIO5)  -> mantener 2s = apagar la Raspberry
+- Boton4 (GPIO5)  -> corto = atrás; mantener 2s = apagar la Raspberry
 """
 
 import time
@@ -26,21 +26,21 @@ import os
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
-# Pines de navegación
-PIN_DOWN = 22
-PIN_UP = 9
-PIN_OK = 25
+# Pines de navegación (botones de mano)
+PIN_DOWN = 22      # Boton6
+PIN_UP = 9         # Boton5
+PIN_OK = 25        # Boton7
 
-# Botones directos
+# Botones de pie
 PIN_WIFI = 6       # Boton1
 PIN_HOTSPOT = 26   # Boton2
 PIN_BT = 13        # Boton3
-PIN_SHUTDOWN = 5   # Boton4 (mantener 2s)
+PIN_BACK = 5       # Boton4: corto = atrás, mantener 2s = apagar
 
 SHUTDOWN_HOLD_S = 2.0
 
 ALL_PINS = [PIN_DOWN, PIN_UP, PIN_OK,
-            PIN_WIFI, PIN_HOTSPOT, PIN_BT, PIN_SHUTDOWN]
+            PIN_WIFI, PIN_HOTSPOT, PIN_BT, PIN_BACK]
 
 for pin in ALL_PINS:
     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -395,7 +395,7 @@ print("=== Boot Menu Iniciado ===")
 status["red"], status["salida"] = leer_estado()
 threading.Thread(target=status_worker, daemon=True).start()
 draw_menu()
-print("Nav: DOWN(22) UP(9) OK(25) | WiFi(6) Hotspot(26) BT(13) Off(5, 2s)")
+print("Nav: DOWN(22) UP(9) OK(25) | WiFi(6) Hotspot(26) BT(13) Back/Off(5)")
 
 try:
     last = {pin: True for pin in ALL_PINS}
@@ -424,14 +424,16 @@ try:
         if pressed(PIN_BT):
             action_bluetooth()
 
-        # Boton4: mantener 2s para apagar
-        if not current[PIN_SHUTDOWN]:
+        # Boton4: corto = atrás (submenú -> principal), mantener 2s = apagar
+        if not current[PIN_BACK]:
             if shutdown_press_t is None:
                 shutdown_press_t = time.monotonic()
             elif time.monotonic() - shutdown_press_t >= SHUTDOWN_HOLD_S:
                 action_shutdown()
                 shutdown_press_t = None
         else:
+            if shutdown_press_t is not None and current_menu != "main":
+                enter_menu("main")
             shutdown_press_t = None
 
         for pin in ALL_PINS:

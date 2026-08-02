@@ -24,13 +24,15 @@ import RPi.GPIO as GPIO
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
-PIN_DOWN = 22
-PIN_UP = 9
-PIN_OK = 25
+PIN_DOWN = 22   # Boton6
+PIN_UP = 9      # Boton5
+PIN_OK = 25     # Boton7
+PIN_BACK = 5    # Boton4: volver al boot_menu
 
 GPIO.setup(PIN_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(PIN_UP, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(PIN_OK, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(PIN_BACK, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # OLED
 serial = i2c(port=1, address=0x3C)
@@ -251,6 +253,7 @@ def volver_a_boot_menu():
         GPIO.setup(PIN_DOWN, GPIO.IN)
         GPIO.setup(PIN_UP, GPIO.IN)
         GPIO.setup(PIN_OK, GPIO.IN)
+        GPIO.setup(PIN_BACK, GPIO.IN)
     except:
         pass
     subprocess.Popen(
@@ -384,11 +387,13 @@ try:
     last_down = True
     last_up = True
     last_ok = True
+    last_back = True
 
     while True:
         current_down = GPIO.input(PIN_DOWN)
         current_up = GPIO.input(PIN_UP)
         current_ok = GPIO.input(PIN_OK)
+        current_back = GPIO.input(PIN_BACK)
 
         if last_down and not current_down:
             time.sleep(0.05)
@@ -407,9 +412,15 @@ try:
             if not GPIO.input(PIN_OK):
                 select()
 
+        if last_back and not current_back:
+            time.sleep(0.05)
+            if not GPIO.input(PIN_BACK):
+                volver_a_boot_menu()
+
         last_down = current_down
         last_up = current_up
         last_ok = current_ok
+        last_back = current_back
         time.sleep(0.01)
 
 except KeyboardInterrupt:
