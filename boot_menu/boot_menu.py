@@ -107,7 +107,7 @@ APPS = {
 MENUS = {
     "main": {
         "title": "BOOT MENU",
-        "items": ["Modo Studio", "Modo Concierto"],
+        "items": ["Modo Studio", "Modo Concierto", "Test Audio"],
     },
     "studio": {
         "title": "MODO STUDIO",
@@ -340,6 +340,28 @@ def action_shutdown():
     subprocess.run(["sudo", "shutdown", "-h", "now"])
 
 
+def test_audio():
+    """Reproduce 5s de prueba por la salida default (BT o cable segun asoundrc)"""
+    print(f"Test audio -> salida {status['salida']}")
+    show_message("Test Audio", f"Sonando -> {status['salida']}")
+    try:
+        r = subprocess.run(
+            ["aplay", "-q", "/home/Javo/Proyects/boot_menu/test_audio.wav"],
+            capture_output=True, text=True, timeout=15
+        )
+        if r.returncode == 0:
+            show_message("Test Audio", "OK")
+        else:
+            print(f"aplay fallo:\n{r.stderr}")
+            with open('/tmp/test_audio.log', 'w') as f:
+                f.write(r.stderr)
+            show_message("Test FALLO", "ver /tmp/test_audio.log")
+    except subprocess.TimeoutExpired:
+        show_message("Test FALLO", "timeout (colgado)")
+    time.sleep(1.5)
+    draw_menu()
+
+
 def select():
     """Ejecuta la acción del item seleccionado"""
     selection = MENUS[current_menu]["items"][selected]
@@ -348,6 +370,8 @@ def select():
         enter_menu("studio")
     elif selection == "Modo Concierto":
         enter_menu("concierto")
+    elif selection == "Test Audio":
+        test_audio()
     elif selection == "< Volver":
         enter_menu("main")
     elif selection in APPS:
