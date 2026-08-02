@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """
-Boot Menu mejorado con:
-- Scroll automático para más de 3 opciones
-- Opción Exit para cerrar limpiamente
-- Mejor visualización
+Boot Menu con dos modos:
+- Modo Studio:    Metronome, Bluetooth Rec, Practice Player
+- Modo Concierto: Looper, Sync_loop, 4trackloop, Backing_player
+
+Botones directos (solo en boot_menu):
+- Boton1 (GPIO6)  -> WiFi
+- Boton2 (GPIO26) -> Hotspot
+- Boton3 (GPIO13) -> Bluetooth (bt_menu)
+- Boton4 (GPIO5)  -> mantener 2s = apagar la Raspberry
 """
 
 import time
 import subprocess
-import sys  # ⭐ Añadido para sys.exit()
+import sys
+import re
+import threading
 from luma.core.interface.serial import i2c
 from luma.oled.device import ssd1306
 from PIL import Image, ImageDraw, ImageFont
@@ -19,15 +26,24 @@ import os
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
-# Pines de botones
+# Pines de navegación
 PIN_DOWN = 22
 PIN_UP = 9
 PIN_OK = 25
 
-# Configura botones con pull-up
-GPIO.setup(PIN_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(PIN_UP, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(PIN_OK, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+# Botones directos
+PIN_WIFI = 6       # Boton1
+PIN_HOTSPOT = 26   # Boton2
+PIN_BT = 13        # Boton3
+PIN_SHUTDOWN = 5   # Boton4 (mantener 2s)
+
+SHUTDOWN_HOLD_S = 2.0
+
+ALL_PINS = [PIN_DOWN, PIN_UP, PIN_OK,
+            PIN_WIFI, PIN_HOTSPOT, PIN_BT, PIN_SHUTDOWN]
+
+for pin in ALL_PINS:
+    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # OLED
 serial = i2c(port=1, address=0x3C)
@@ -41,441 +57,359 @@ except:
     font = ImageFont.load_default()
     font_small = ImageFont.load_default()
 
-# Items del menú
-menu_items = [
-    "Looper",
-    "Sync_loop",
-    "4trackloop",
-    "Practice Player",
-    "Backing_player",
-    "Bluetooth Rec",
-    "Metronome",
-    "Hotspot",
-    "WIFI",
-    "Shutdown",
-    "Exit"
-]
+# Apps lanzables: nombre -> (comando, cwd, log)
+APPS = {
+    "Metronome": {
+        "cmd": ["/home/Javo/Proyects/metronome/metronome_env/bin/python", "-u", "main.py"],
+        "cwd": "/home/Javo/Proyects/metronome",
+        "log": "metronome",
+        "msg": "Metronome...",
+    },
+    "Bluetooth Rec": {
+        "cmd": ["/home/Javo/Proyects/bluetooth_recorder/bt_recorder_env/bin/python", "-u", "main.py"],
+        "cwd": "/home/Javo/Proyects/bluetooth_recorder",
+        "log": "bluetooth_recorder",
+        "msg": "BT Rec...",
+    },
+    "Practice Player": {
+        "cmd": ["/home/Javo/Proyects/practice_player/practice_env/bin/python", "-u", "main.py"],
+        "cwd": "/home/Javo/Proyects/practice_player",
+        "log": "practice_player",
+        "msg": "Practice...",
+    },
+    "Looper": {
+        "cmd": ["/home/Javo/Proyects/Looper/looper_env/bin/python", "-u", "-m", "software.main"],
+        "cwd": "/home/Javo/Proyects/Looper",
+        "log": "looper",
+        "msg": "Looper...",
+    },
+    "Sync_loop": {
+        "cmd": ["/home/Javo/Proyects/Looper/looper_env/bin/python", "-u", "-m", "software.main"],
+        "cwd": "/home/Javo/Proyects/sync_looper",
+        "log": "sync_looper",
+        "msg": "Sync_Loop...",
+    },
+    "4trackloop": {
+        "cmd": ["/home/Javo/Proyects/raspi-looper/rlooper_env/bin/python", "-u", "main.py"],
+        "cwd": "/home/Javo/Proyects/raspi-looper",
+        "log": "raspi-looper",
+        "msg": "4trackloop...",
+    },
+    "Backing_player": {
+        "cmd": ["/home/Javo/Proyects/Looper/looper_env/bin/python", "-u", "main.py"],
+        "cwd": "/home/Javo/Proyects/backing_player",
+        "log": "backing_player",
+        "msg": "Backing...",
+    },
+}
 
+# Estructura de menús
+MENUS = {
+    "main": {
+        "title": "BOOT MENU",
+        "items": ["Modo Studio", "Modo Concierto"],
+    },
+    "studio": {
+        "title": "MODO STUDIO",
+        "items": ["Metronome", "Bluetooth Rec", "Practice Player", "< Volver"],
+    },
+    "concierto": {
+        "title": "MODO CONCIERTO",
+        "items": ["Looper", "Sync_loop", "4trackloop", "Backing_player", "< Volver"],
+    },
+}
+
+current_menu = "main"
 selected = 0
-scroll_offset = 0  # Para scroll
-MAX_VISIBLE = 3    # Máximo de items visibles a la vez
+scroll_offset = 0
+MAX_VISIBLE = 3
+
+# ---------- Estado de red y salida de audio ----------
+
+ASOUNDRC = "/home/Javo/.asoundrc"
+ASOUNDRC_MARK = "# generado por bt_menu"
+MAC_RE = re.compile(r'([0-9A-F]{2}:){5}[0-9A-F]{2}')
+
+# red: "WiFi"/"Hspt" · salida: "Jack"/"BT+" (conectado)/"BT!" (sin conexión)
+status = {"red": "", "salida": ""}
+draw_lock = threading.Lock()
+
+
+def leer_estado():
+    try:
+        r = subprocess.run(["systemctl", "is-active", "--quiet", "hostapd"],
+                           timeout=5)
+        red = "Hspt" if r.returncode == 0 else "WiFi"
+    except Exception:
+        red = "?"
+
+    salida = "Jack"
+    try:
+        with open(ASOUNDRC) as f:
+            contenido = f.read()
+        if ASOUNDRC_MARK in contenido:
+            salida = "BT!"
+            m = MAC_RE.search(contenido)
+            if m:
+                info = subprocess.run(["bluetoothctl", "info", m.group(0)],
+                                      capture_output=True, text=True,
+                                      timeout=5).stdout
+                if "Connected: yes" in info:
+                    salida = "BT+"
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+    return red, salida
+
+
+def status_worker():
+    while True:
+        time.sleep(5)
+        nuevo = leer_estado()
+        if (status["red"], status["salida"]) != nuevo:
+            status["red"], status["salida"] = nuevo
+            draw_menu()
+
 
 def draw_menu():
-    """Dibuja el menú con scroll si hay más de 3 opciones"""
+    """Dibuja el menú actual con scroll si hay más de 3 opciones"""
     global scroll_offset
-    
+
+    menu = MENUS[current_menu]
+    items = menu["items"]
+
     img = Image.new("1", (128, 64))
     draw = ImageDraw.Draw(img)
-    
-    # Título
-    draw.text((5, 2), "BOOT MENU", font=font_small, fill=255)
+
+    draw.text((5, 2), menu["title"], font=font_small, fill=255)
+
+    estado = f"{status['red']} {status['salida']}".strip()
+    if estado:
+        w = draw.textlength(estado, font=font_small)
+        draw.text((126 - w, 2), estado, font=font_small, fill=255)
+
     draw.line([(0, 15), (128, 15)], fill=255)
-    
-    # Ajustar scroll para mantener el item seleccionado visible
+
     if selected < scroll_offset:
         scroll_offset = selected
     elif selected >= scroll_offset + MAX_VISIBLE:
         scroll_offset = selected - MAX_VISIBLE + 1
-    
-    # Dibujar items visibles
+
     for i in range(MAX_VISIBLE):
         item_index = scroll_offset + i
-        
-        if item_index >= len(menu_items):
+        if item_index >= len(items):
             break
-        
-        item = menu_items[item_index]
+
+        item = items[item_index]
         y_pos = 20 + i * 15
-        
-        # Marcar seleccionado
+
         if item_index == selected:
-            # Rectángulo de selección
             draw.rectangle([(2, y_pos - 2), (126, y_pos + 13)], outline=255, fill=0)
             draw.text((10, y_pos), f"> {item}", font=font_small, fill=255)
         else:
             draw.text((10, y_pos), f"  {item}", font=font_small, fill=255)
-    
-    # Indicadores de scroll
+
     if scroll_offset > 0:
-        # Flecha arriba
         draw.polygon([(120, 18), (124, 22), (116, 22)], fill=255)
-    
-    if scroll_offset + MAX_VISIBLE < len(menu_items):
-        # Flecha abajo
+    if scroll_offset + MAX_VISIBLE < len(items):
         draw.polygon([(120, 62), (124, 58), (116, 58)], fill=255)
-    
-    # Mostrar contador
-    draw.text((2, 58), f"{selected + 1}/{len(menu_items)}", font=font_small, fill=255)
-    
+
+    if current_menu == "main":
+        draw.text((2, 54), "1:WiFi 2:Hspot 3:BT 4:Off", font=font_small, fill=255)
+    else:
+        draw.text((2, 58), f"{selected + 1}/{len(items)}", font=font_small, fill=255)
+
+    with draw_lock:
+        device.display(img)
+
+
+def show_message(line1, line2):
+    img = Image.new("1", (128, 64))
+    draw = ImageDraw.Draw(img)
+    draw.text((15, 25), line1, font=font, fill=255)
+    draw.text((15, 40), line2, font=font_small, fill=255)
     device.display(img)
 
-def navigate_down():
-    """Navega hacia abajo (circular)"""
+
+def clear_screen():
+    device.display(Image.new("1", (128, 64)))
+
+
+def navigate(delta):
     global selected
-    selected = (selected + 1) % len(menu_items)
+    selected = (selected + delta) % len(MENUS[current_menu]["items"])
     draw_menu()
 
-def navigate_up():
-    """Navega hacia arriba (circular)"""
-    global selected
-    selected = (selected - 1) % len(menu_items)
+
+def enter_menu(name):
+    global current_menu, selected, scroll_offset
+    current_menu = name
+    selected = 0
+    scroll_offset = 0
     draw_menu()
-    
+
+
 def cleanup_and_exit():
     """Limpia recursos y sale limpiamente"""
     print("\nLimpiando recursos...")
-    
-    # Limpiar pantalla
-    img = Image.new("1", (128, 64))
-    draw = ImageDraw.Draw(img)
-    draw.text((30, 25), "Goodbye!", font=font, fill=255)
-    device.display(img)
+    show_message("Goodbye!", "")
     time.sleep(1)
-    
-    # Limpiar OLED completamente
-    img = Image.new("1", (128, 64))
-    device.display(img)
-    
-    # ⭐ NO hacer GPIO.cleanup() - corrompe I2C y AudioInjector
-    # Solo limpiar los pines específicos que usamos
+    clear_screen()
+
+    # NO hacer GPIO.cleanup() - corrompe I2C y AudioInjector
     try:
-        GPIO.setup(PIN_DOWN, GPIO.IN)  # Resetear a input
-        GPIO.setup(PIN_UP, GPIO.IN)
-        GPIO.setup(PIN_OK, GPIO.IN)    # Resetear a input
+        for pin in ALL_PINS:
+            GPIO.setup(pin, GPIO.IN)
     except:
         pass
-    
+
     print("Boot menu cerrado limpiamente")
-    # ⭐ Usar exit() normal en vez de os._exit(0)
     sys.exit(0)
+
+
+def launch_app(name):
+    """Lanza una app y termina el boot_menu"""
+    app = APPS[name]
+    print(f"Arrancando {name}...")
+    show_message("Starting", app["msg"])
+    time.sleep(0.5)
+    clear_screen()
+    GPIO.cleanup()
+
+    subprocess.Popen(
+        app["cmd"],
+        cwd=app["cwd"],
+        stdin=subprocess.DEVNULL,
+        stdout=open(f"/tmp/{app['log']}.log", 'w', buffering=1),
+        stderr=open(f"/tmp/{app['log']}_errors.log", 'w', buffering=1),
+        start_new_session=True
+    )
+    os._exit(0)
+
+
+def action_wifi():
+    print("Cambiando a WiFi...")
+    show_message("WiFi...", "Switching")
+    subprocess.Popen(
+        ["sudo", "bash", "/home/Javo/Proyects/boot_menu/switch_wifi.sh"],
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=open('/tmp/switch_wifi.log', 'w'),
+        stderr=subprocess.STDOUT
+    )
+    os._exit(0)
+
+
+def action_hotspot():
+    print("Cambiando a Hotspot...")
+    show_message("Hotspot...", "Switching")
+    subprocess.Popen(
+        ["sudo", "bash", "/home/Javo/Proyects/boot_menu/switch_hotspot.sh"],
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=open('/tmp/switch_hotspot.log', 'w'),
+        stderr=subprocess.STDOUT
+    )
+    os._exit(0)
+
+
+def action_bluetooth():
+    print("Arrancando BT Menu...")
+    show_message("Starting", "Bluetooth...")
+    time.sleep(0.5)
+    clear_screen()
+    GPIO.cleanup()
+    subprocess.Popen(
+        [sys.executable, "/home/Javo/Proyects/boot_menu/bt_menu.py"],
+        stdin=subprocess.DEVNULL,
+        stdout=open('/tmp/bt_menu.log', 'w', buffering=1),
+        stderr=open('/tmp/bt_menu_errors.log', 'w', buffering=1),
+        start_new_session=True
+    )
+    os._exit(0)
+
+
+def action_shutdown():
+    print("Apagando sistema...")
+    show_message("Shutting", "down...")
+    time.sleep(1)
+    clear_screen()
+    GPIO.cleanup()
+    subprocess.run(["sudo", "shutdown", "-h", "now"])
+
 
 def select():
     """Ejecuta la acción del item seleccionado"""
-    selection = menu_items[selected]
-    
-    if selection == "Looper":
-        print("Arrancando Looper...")
-        
-        # Mensaje en pantalla
-        img = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(img)
-        draw.text((20, 25), "Starting", font=font, fill=255)
-        draw.text((25, 40), "Looper...", font=font_small, fill=255)
-        device.display(img)
-        time.sleep(0.5)
-        
-        # Limpia pantalla
-        img = Image.new("1", (128, 64))
-        device.display(img)
-        
-        # Limpia GPIO
-        GPIO.cleanup()
-        
-        # Lanza looper
-        subprocess.Popen(
-            ["/home/Javo/Proyects/Looper/looper_env/bin/python", "-u", "-m", "software.main"],
-            cwd="/home/Javo/Proyects/Looper",
-            stdin=subprocess.DEVNULL,
-            stdout=open('/tmp/looper.log', 'w', buffering=1),
-            stderr=open('/tmp/looper_errors.log', 'w', buffering=1),
-            start_new_session=True
-        )
-        
-        # Termina boot_menu
-        os._exit(0)
-        
-    elif selection == "Sync_loop":
-        print("Arrancando Sync...")
-        
-        # Mensaje en pantalla
-        img = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(img)
-        draw.text((20, 25), "Starting", font=font, fill=255)
-        draw.text((25, 40), "Sync_Loop...", font=font_small, fill=255)
-        device.display(img)
-        time.sleep(0.5)
-        
-        # Limpia pantalla
-        img = Image.new("1", (128, 64))
-        device.display(img)
-        
-        # Limpia GPIO
-        GPIO.cleanup()
-        
-        # Lanza looper
-        subprocess.Popen(
-            ["/home/Javo/Proyects/Looper/looper_env/bin/python", "-u", "-m", "software.main"],
-            cwd="/home/Javo/Proyects/sync_looper",
-            stdin=subprocess.DEVNULL,
-            stdout=open('/tmp/sync_looper.log', 'w', buffering=1),
-            stderr=open('/tmp/sync_looper_errors.log', 'w', buffering=1),
-            start_new_session=True
-        )
-        
-        # Termina boot_menu
-        os._exit(0)
+    selection = MENUS[current_menu]["items"][selected]
 
-        
-    elif selection == "Practice Player":
-        print("Arrancando Practice Player...")
-        
-        # Mensaje en pantalla
-        img = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(img)
-        draw.text((15, 25), "Starting", font=font, fill=255)
-        draw.text((10, 40), "Practice...", font=font_small, fill=255)
-        device.display(img)
-        time.sleep(0.5)
-        
-        # Limpia pantalla
-        img = Image.new("1", (128, 64))
-        device.display(img)
-        
-        # Limpia GPIO
-        GPIO.cleanup()
-        
-        # Lanza practice player
-        subprocess.Popen(
-            ["/home/Javo/Proyects/practice_player/practice_env/bin/python", "-u", "main.py"],
-            cwd="/home/Javo/Proyects/practice_player",
-            stdin=subprocess.DEVNULL,
-            stdout=open('/tmp/practice_player.log', 'w', buffering=1),
-            stderr=open('/tmp/practice_player_errors.log', 'w', buffering=1),
-            start_new_session=True
-        )
-        
-        # Termina boot_menu
-        os._exit(0)
-        
-    elif selection == "4trackloop":
-        print("Arrancando looper...")
-        
-        # Mensaje en pantalla
-        img = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(img)
-        draw.text((15, 25), "Starting", font=font, fill=255)
-        draw.text((10, 40), "Looper...", font=font_small, fill=255)
-        device.display(img)
-        time.sleep(0.5)
-        
-        # Limpia pantalla
-        img = Image.new("1", (128, 64))
-        device.display(img)
-        
-        # Limpia GPIO
-        GPIO.cleanup()
-        
-        # Lanza practice player
-        subprocess.Popen(
-            ["/home/Javo/Proyects/raspi-looper/rlooper_env/bin/python", "-u", "main.py"],
-            cwd="/home/Javo/Proyects/raspi-looper",
-            stdin=subprocess.DEVNULL,
-            stdout=open('/tmp/raspi-looper.log', 'w', buffering=1),
-            stderr=open('/tmp/raspi-looper_errors.log', 'w', buffering=1),
-            start_new_session=True
-        )
-        
-        # Termina boot_menu
-        os._exit(0)
-        
-    elif selection == "Backing_player":
-        print("Backing...")
-        
-        # Mensaje en pantalla
-        img = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(img)
-        draw.text((15, 25), "Starting", font=font, fill=255)
-        draw.text((10, 40), "Backing...", font=font_small, fill=255)
-        device.display(img)
-        time.sleep(0.5)
-        
-        # Limpia pantalla
-        img = Image.new("1", (128, 64))
-        device.display(img)
-        
-        # Limpia GPIO
-        GPIO.cleanup()
-        
-        # Lanza practice player
-        subprocess.Popen(
-            ["/home/Javo/Proyects/Looper/looper_env/bin/python", "-u", "main.py"],
-            cwd="/home/Javo/Proyects/backing_player",
-            stdin=subprocess.DEVNULL,
-            stdout=open('/tmp/backing_player.log', 'w', buffering=1),
-            stderr=open('/tmp/backing_player_errors.log', 'w', buffering=1),
-            start_new_session=True
-        )
-        
-        # Termina boot_menu
-        os._exit(0)
-        
-    elif selection == "Metronome":
-        print("Arrancando Metronome...")
-        
-        # Mensaje en pantalla
-        img = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(img)
-        draw.text((15, 25), "Starting", font=font, fill=255)
-        draw.text((10, 40), "Metronome...", font=font_small, fill=255)
-        device.display(img)
-        time.sleep(0.5)
-        
-        # Limpia pantalla
-        img = Image.new("1", (128, 64))
-        device.display(img)
-        
-        # Limpia GPIO
-        GPIO.cleanup()
-        
-        # Lanza Metronome
-        subprocess.Popen(
-            ["/home/Javo/Proyects/metronome/metronome_env/bin/python", "-u", "main.py"],
-            cwd="/home/Javo/Proyects/metronome",
-            stdin=subprocess.DEVNULL,
-            stdout=open('/tmp/metronome.log', 'w', buffering=1),
-            stderr=open('/tmp/metronome_errors.log', 'w', buffering=1),
-            start_new_session=True
-        )
-        
-        # Termina boot_menu
-        os._exit(0)
+    if selection == "Modo Studio":
+        enter_menu("studio")
+    elif selection == "Modo Concierto":
+        enter_menu("concierto")
+    elif selection == "< Volver":
+        enter_menu("main")
+    elif selection in APPS:
+        launch_app(selection)
 
-    
-    elif selection == "Bluetooth Rec":
-        print("Arrancando Bluetooth Recorder...")
-        
-        # Mensaje en pantalla
-        img = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(img)
-        draw.text((15, 25), "Starting", font=font, fill=255)
-        draw.text((10, 40), "BT Rec...", font=font_small, fill=255)
-        device.display(img)
-        time.sleep(0.5)
-        
-        # Limpia pantalla
-        img = Image.new("1", (128, 64))
-        device.display(img)
-        
-        # Limpia GPIO
-        GPIO.cleanup()
-        
-        # Lanza practice player
-        subprocess.Popen(
-            ["/home/Javo/Proyects/bluetooth_recorder/bt_recorder_env/bin/python", "-u", "main.py"],
-            cwd="/home/Javo/Proyects/bluetooth_recorder",
-            stdin=subprocess.DEVNULL,
-            stdout=open('/tmp/bluetooth_recorder.log', 'w', buffering=1),
-            stderr=open('/tmp/bluetooth_recorder_errors.log', 'w', buffering=1),
-            start_new_session=True
-        )
-        
-        # Termina boot_menu
-        os._exit(0)
-    
-    elif selection == "Shutdown":
-        print("Apagando sistema...")
-        
-        # Mensaje en pantalla
-        img = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(img)
-        draw.text((15, 25), "Shutting", font=font, fill=255)
-        draw.text((25, 40), "down...", font=font_small, fill=255)
-        device.display(img)
-        time.sleep(1)
-        
-        # Limpia pantalla
-        img = Image.new("1", (128, 64))
-        device.display(img)
-        
-        GPIO.cleanup()
-        subprocess.run(["sudo", "shutdown", "-h", "now"])
-
-
-    elif selection == "Hotspot":
-        img = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(img)
-        draw.text((15, 20), "Switching to", font=font_small, fill=255)
-        draw.text((15, 35), "Hotspot...", font=font, fill=255)
-        device.display(img)
-
-        subprocess.Popen(
-            ["sudo", "bash", "/home/Javo/Proyects/boot_menu/switch_hotspot.sh"],
-            start_new_session=True,
-            stdin=subprocess.DEVNULL,
-            stdout=open('/tmp/switch_hotspot.log', 'w'),
-            stderr=subprocess.STDOUT
-        )
-        os._exit(0)
-
-    elif selection == "WIFI":
-        img = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(img)
-        draw.text((15, 20), "Switching to", font=font_small, fill=255)
-        draw.text((25, 35), "WiFi...", font=font, fill=255)
-        device.display(img)
-    
-        subprocess.Popen(
-            ["sudo", "bash", "/home/Javo/Proyects/boot_menu/switch_wifi.sh"],
-            start_new_session=True,
-            stdin=subprocess.DEVNULL,
-            stdout=open('/tmp/switch_wifi.log', 'w'),
-            stderr=subprocess.STDOUT
-        )
-        os._exit(0)
-
-    elif selection == "Exit":
-        cleanup_and_exit()
 
 # Dibuja menú inicial
 print("=== Boot Menu Iniciado ===")
+status["red"], status["salida"] = leer_estado()
+threading.Thread(target=status_worker, daemon=True).start()
 draw_menu()
-print(f"Items disponibles: {', '.join(menu_items)}")
-print("Usa botones: ↓ (GPIO23) y OK (GPIO22)")
-
-# Loop principal
+print("Nav: DOWN(22) UP(9) OK(25) | WiFi(6) Hotspot(26) BT(13) Off(5, 2s)")
 
 try:
-    last_down = True
-    last_up = True  # ⭐ Ya está declarado
-    last_ok = True
-    
+    last = {pin: True for pin in ALL_PINS}
+    shutdown_press_t = None
+
     while True:
-        # Lee botones (LOW = presionado porque usamos pull-up)
-        current_down = GPIO.input(PIN_DOWN)
-        current_up = GPIO.input(PIN_UP)  # ⭐ Ya está declarado
-        current_ok = GPIO.input(PIN_OK)
-        
-        # Detecta flanco descendente (presión)
-        if last_down and not current_down:  # Botón DOWN presionado
-            time.sleep(0.05)  # Debounce
-            if not GPIO.input(PIN_DOWN):  # Confirma que sigue presionado
-                navigate_down()
-        
-        # ⭐ AÑADE ESTO AQUÍ:
-        if last_up and not current_up:  # Botón UP presionado
-            time.sleep(0.05)  # Debounce
-            if not GPIO.input(PIN_UP):  # Confirma que sigue presionado
-                navigate_up()
-        
-        if last_ok and not current_ok:  # Botón OK presionado
-            time.sleep(0.05)  # Debounce
-            if not GPIO.input(PIN_OK):  # Confirma que sigue presionado
-                select()
-        
-        last_down = current_down
-        last_up = current_up  # ⭐ AÑADE ESTO TAMBIÉN
-        last_ok = current_ok        
-        time.sleep(0.01)  # Pequeña pausa para no saturar CPU
-        
+        current = {pin: GPIO.input(pin) for pin in ALL_PINS}
+
+        # Botones con debounce por flanco descendente
+        def pressed(pin):
+            if last[pin] and not current[pin]:
+                time.sleep(0.05)
+                return not GPIO.input(pin)
+            return False
+
+        if pressed(PIN_DOWN):
+            navigate(+1)
+        if pressed(PIN_UP):
+            navigate(-1)
+        if pressed(PIN_OK):
+            select()
+        if pressed(PIN_WIFI):
+            action_wifi()
+        if pressed(PIN_HOTSPOT):
+            action_hotspot()
+        if pressed(PIN_BT):
+            action_bluetooth()
+
+        # Boton4: mantener 2s para apagar
+        if not current[PIN_SHUTDOWN]:
+            if shutdown_press_t is None:
+                shutdown_press_t = time.monotonic()
+            elif time.monotonic() - shutdown_press_t >= SHUTDOWN_HOLD_S:
+                action_shutdown()
+                shutdown_press_t = None
+        else:
+            shutdown_press_t = None
+
+        for pin in ALL_PINS:
+            last[pin] = current[pin]
+        time.sleep(0.01)
+
 except KeyboardInterrupt:
     print("\nCtrl+C detectado")
     cleanup_and_exit()
-    
+
 except Exception as e:
     print(f"\nError en boot_menu: {e}")
     cleanup_and_exit()
-    
+
 finally:
-    # ⭐ NO hacer GPIO.cleanup() - puede corromper I2C
-    # El sistema operativo limpiará los pines al terminar el proceso
+    # NO hacer GPIO.cleanup() - puede corromper I2C
     pass
