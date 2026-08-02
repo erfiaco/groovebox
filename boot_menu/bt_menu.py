@@ -144,8 +144,45 @@ def mostrar(linea1, linea2="", linea3=""):
     device.display(img)
 
 
+def listar_dispositivos(vistos=None):
+    """Lista de dicts {mac, name, paired, connected}.
+
+    Sin `vistos` (arranque): solo emparejados — instantáneo, sin escanear.
+    Con `vistos` (tras un escaneo): emparejados + los vistos en ese escaneo.
+    """
+    emparejados = set()
+    for linea in bt(["paired-devices"]).splitlines():
+        m = MAC_RE.search(linea)
+        if m:
+            emparejados.add(m.group(0))
+
+    dispositivos = []
+    for linea in bt(["devices"]).splitlines():
+        m = MAC_RE.search(linea)
+        if not m:
+            continue
+        mac = m.group(0)
+        name = linea.split(mac, 1)[1].strip()
+        if mac not in emparejados and (vistos is None or mac not in vistos):
+            continue
+        if not nombre_real(mac, name):
+            continue
+        info = bt(["info", mac])
+        conectado = "Connected: yes" in info
+        dispositivos.append({
+            "mac": mac,
+            "name": name,
+            "paired": mac in emparejados,
+            "connected": conectado,
+        })
+
+    # Conectados primero, luego emparejados, luego el resto
+    dispositivos.sort(key=lambda d: (not d["connected"], not d["paired"], d["name"].lower()))
+    return dispositivos
+
+
 def escanear():
-    """Escanea SCAN_SECONDS y devuelve lista de dicts {mac, name, paired, connected}"""
+    """Escanea SCAN_SECONDS y devuelve la lista completa de dispositivos"""
     bt(["power", "on"])
 
     proc = subprocess.Popen(
@@ -171,37 +208,7 @@ def escanear():
         if m and "Device" in linea:
             vistos.add(m.group(0))
 
-    # Emparejados: siempre en la lista aunque no se hayan visto
-    emparejados = set()
-    for linea in bt(["paired-devices"]).splitlines():
-        m = MAC_RE.search(linea)
-        if m:
-            emparejados.add(m.group(0))
-
-    # Nombres desde la caché de bluez
-    dispositivos = []
-    for linea in bt(["devices"]).splitlines():
-        m = MAC_RE.search(linea)
-        if not m:
-            continue
-        mac = m.group(0)
-        name = linea.split(mac, 1)[1].strip()
-        if mac not in vistos and mac not in emparejados:
-            continue
-        if not nombre_real(mac, name):
-            continue
-        info = bt(["info", mac])
-        conectado = "Connected: yes" in info
-        dispositivos.append({
-            "mac": mac,
-            "name": name,
-            "paired": mac in emparejados,
-            "connected": conectado,
-        })
-
-    # Conectados primero, luego emparejados, luego el resto
-    dispositivos.sort(key=lambda d: (not d["connected"], not d["paired"], d["name"].lower()))
-    return dispositivos
+    return listar_dispositivos(vistos)
 
 
 def conectar(dev):
@@ -365,8 +372,9 @@ def select():
 # ---------- Main ----------
 
 print("=== BT Menu iniciado ===")
+mostrar("Bluetooth", "Cargando...")
 sincronizar_asoundrc()
-dispositivos = escanear()
+dispositivos = listar_dispositivos()
 print(f"Dispositivos encontrados: {[(d['name'], d['mac'], 'paired' if d['paired'] else '', 'conn' if d['connected'] else '') for d in dispositivos]}")
 construir_menu(dispositivos)
 draw_menu()

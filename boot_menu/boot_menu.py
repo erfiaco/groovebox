@@ -167,10 +167,13 @@ def leer_estado():
 def status_worker():
     while True:
         time.sleep(5)
-        nuevo = leer_estado()
-        if (status["red"], status["salida"]) != nuevo:
-            status["red"], status["salida"] = nuevo
-            draw_menu()
+        try:
+            nuevo = leer_estado()
+            if (status["red"], status["salida"]) != nuevo:
+                status["red"], status["salida"] = nuevo
+                draw_menu()
+        except Exception as e:
+            print(f"[status] error: {e}")
 
 
 def draw_menu():
@@ -221,6 +224,12 @@ def draw_menu():
     else:
         draw.text((2, 58), f"{selected + 1}/{len(items)}", font=font_small, fill=255)
 
+    display(img)
+
+
+def display(img):
+    # Todas las escrituras al OLED pasan por aquí: el hilo de estado y el
+    # principal no pueden usar el I2C a la vez (Errno 5 si colisionan)
     with draw_lock:
         device.display(img)
 
@@ -230,11 +239,11 @@ def show_message(line1, line2):
     draw = ImageDraw.Draw(img)
     draw.text((15, 25), line1, font=font, fill=255)
     draw.text((15, 40), line2, font=font_small, fill=255)
-    device.display(img)
+    display(img)
 
 
 def clear_screen():
-    device.display(Image.new("1", (128, 64)))
+    display(Image.new("1", (128, 64)))
 
 
 def navigate(delta):
@@ -254,9 +263,12 @@ def enter_menu(name):
 def cleanup_and_exit():
     """Limpia recursos y sale limpiamente"""
     print("\nLimpiando recursos...")
-    show_message("Goodbye!", "")
-    time.sleep(1)
-    clear_screen()
+    try:
+        show_message("Goodbye!", "")
+        time.sleep(1)
+        clear_screen()
+    except Exception as e:
+        print(f"[oled] no responde al salir: {e}")
 
     # NO hacer GPIO.cleanup() - corrompe I2C y AudioInjector
     try:
