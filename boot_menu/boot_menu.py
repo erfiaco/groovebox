@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Boot Menu con dos modos:
+Boot Menu:
 - Modo Studio:    Metronome, Bluetooth Rec, Practice Player
 - Modo Concierto: Looper, Sync_loop, 4trackloop, Backing_player
+- Conecciones:    WiFi, Hotspot, Bluetooth, Shutdown
 
 Botones directos (solo en boot_menu):
-- Boton1 (GPIO6)  -> WiFi
-- Boton2 (GPIO26) -> Hotspot
-- Boton3 (GPIO13) -> Bluetooth (bt_menu)
-- Boton4 (GPIO5)  -> corto = atrás; mantener 2s = apagar la Raspberry
+- Boton1 (GPIO6)  -> WiFi        [DESACTIVADO]
+- Boton2 (GPIO26) -> Hotspot     [DESACTIVADO]
+- Boton3 (GPIO13) -> Bluetooth   [DESACTIVADO]
+- Boton4 (GPIO5)  -> atrás/apagar [DESACTIVADO]
 """
 
 import time
@@ -39,8 +40,10 @@ PIN_BACK = 5       # Boton4: corto = atrás, mantener 2s = apagar
 
 SHUTDOWN_HOLD_S = 2.0
 
-ALL_PINS = [PIN_DOWN, PIN_UP, PIN_OK,
-            PIN_WIFI, PIN_HOTSPOT, PIN_BT, PIN_BACK]
+# Botones 1-4 (pie) desactivados temporalmente
+# ALL_PINS = [PIN_DOWN, PIN_UP, PIN_OK,
+#             PIN_WIFI, PIN_HOTSPOT, PIN_BT, PIN_BACK]
+ALL_PINS = [PIN_DOWN, PIN_UP, PIN_OK]
 
 for pin in ALL_PINS:
     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -107,7 +110,7 @@ APPS = {
 MENUS = {
     "main": {
         "title": "BOOT MENU",
-        "items": ["Modo Studio", "Modo Concierto", "Test Audio"],
+        "items": ["Modo Studio", "Modo Concierto", "Conecciones", "Test Audio"],
     },
     "studio": {
         "title": "MODO STUDIO",
@@ -116,6 +119,10 @@ MENUS = {
     "concierto": {
         "title": "MODO CONCIERTO",
         "items": ["Looper", "Sync_loop", "4trackloop", "Backing_player", "< Volver"],
+    },
+    "conecciones": {
+        "title": "CONECCIONES",
+        "items": ["WiFi", "Hotspot", "Bluetooth", "Shutdown", "< Volver"],
     },
 }
 
@@ -219,9 +226,12 @@ def draw_menu():
     if scroll_offset + MAX_VISIBLE < len(items):
         draw.polygon([(120, 62), (124, 58), (116, 58)], fill=255)
 
-    if current_menu == "main":
-        draw.text((2, 54), "1:WiFi 2:Hspot 3:BT 4:Off", font=font_small, fill=255)
-    else:
+    # Botones 1-4 desactivados temporalmente: no mostrar leyenda
+    # if current_menu == "main":
+    #     draw.text((2, 54), "1:WiFi 2:Hspot 3:BT 4:Off", font=font_small, fill=255)
+    # else:
+    #     draw.text((2, 58), f"{selected + 1}/{len(items)}", font=font_small, fill=255)
+    if current_menu != "main":
         draw.text((2, 58), f"{selected + 1}/{len(items)}", font=font_small, fill=255)
 
     display(img)
@@ -382,8 +392,18 @@ def select():
         enter_menu("studio")
     elif selection == "Modo Concierto":
         enter_menu("concierto")
+    elif selection == "Conecciones":
+        enter_menu("conecciones")
     elif selection == "Test Audio":
         test_audio()
+    elif selection == "WiFi":
+        action_wifi()
+    elif selection == "Hotspot":
+        action_hotspot()
+    elif selection == "Bluetooth":
+        action_bluetooth()
+    elif selection == "Shutdown":
+        action_shutdown()
     elif selection == "< Volver":
         enter_menu("main")
     elif selection in APPS:
@@ -395,7 +415,8 @@ print("=== Boot Menu Iniciado ===")
 status["red"], status["salida"] = leer_estado()
 threading.Thread(target=status_worker, daemon=True).start()
 draw_menu()
-print("Nav: DOWN(22) UP(9) OK(25) | WiFi(6) Hotspot(26) BT(13) Back/Off(5)")
+# print("Nav: DOWN(22) UP(9) OK(25) | WiFi(6) Hotspot(26) BT(13) Back/Off(5)")
+print("Nav: DOWN(22) UP(9) OK(25) | Botones 1-4 desactivados")
 
 try:
     last = {pin: True for pin in ALL_PINS}
@@ -417,24 +438,25 @@ try:
             navigate(-1)
         if pressed(PIN_OK):
             select()
-        if pressed(PIN_WIFI):
-            action_wifi()
-        if pressed(PIN_HOTSPOT):
-            action_hotspot()
-        if pressed(PIN_BT):
-            action_bluetooth()
+        # Botones 1-4 (pie) desactivados temporalmente
+        # if pressed(PIN_WIFI):
+        #     action_wifi()
+        # if pressed(PIN_HOTSPOT):
+        #     action_hotspot()
+        # if pressed(PIN_BT):
+        #     action_bluetooth()
 
         # Boton4: corto = atrás (submenú -> principal), mantener 2s = apagar
-        if not current[PIN_BACK]:
-            if shutdown_press_t is None:
-                shutdown_press_t = time.monotonic()
-            elif time.monotonic() - shutdown_press_t >= SHUTDOWN_HOLD_S:
-                action_shutdown()
-                shutdown_press_t = None
-        else:
-            if shutdown_press_t is not None and current_menu != "main":
-                enter_menu("main")
-            shutdown_press_t = None
+        # if not current[PIN_BACK]:
+        #     if shutdown_press_t is None:
+        #         shutdown_press_t = time.monotonic()
+        #     elif time.monotonic() - shutdown_press_t >= SHUTDOWN_HOLD_S:
+        #         action_shutdown()
+        #         shutdown_press_t = None
+        # else:
+        #     if shutdown_press_t is not None and current_menu != "main":
+        #         enter_menu("main")
+        #     shutdown_press_t = None
 
         for pin in ALL_PINS:
             last[pin] = current[pin]
