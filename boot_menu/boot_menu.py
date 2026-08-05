@@ -142,6 +142,20 @@ status = {"red": "", "salida": ""}
 draw_lock = threading.Lock()
 
 
+def asegurar_puente_bt():
+    """Rearranca alsaloop si la salida es BT y el puente no corre (p.ej. tras reboot)"""
+    corre = subprocess.run(["pgrep", "-x", "alsaloop"],
+                           capture_output=True).returncode == 0
+    if corre:
+        return
+    subprocess.Popen(
+        ["alsaloop", "-C", "hw:Loopback,1,0", "-P", "btspeaker", "-t", "100000"],
+        stdout=open('/tmp/alsaloop.log', 'w'),
+        stderr=subprocess.STDOUT,
+        start_new_session=True)
+    print("[alsaloop] puente Loopback -> BT rearrancado")
+
+
 def leer_estado():
     try:
         r = subprocess.run(["systemctl", "is-active", "--quiet", "hostapd"],
@@ -163,6 +177,7 @@ def leer_estado():
                                       timeout=5).stdout
                 if "Connected: yes" in info:
                     salida = "BT+"
+                    asegurar_puente_bt()
     except FileNotFoundError:
         pass
     except Exception:
