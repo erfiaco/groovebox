@@ -260,8 +260,8 @@ def enter_menu(name):
     draw_menu()
 
 
-def cleanup_and_exit():
-    """Limpia recursos y sale limpiamente"""
+def cleanup_and_exit(code=0):
+    """Limpia recursos y sale; code != 0 hace que systemd relance el menú"""
     print("\nLimpiando recursos...")
     try:
         show_message("Goodbye!", "")
@@ -278,7 +278,7 @@ def cleanup_and_exit():
         pass
 
     print("Boot menu cerrado limpiamente")
-    sys.exit(0)
+    sys.exit(code)
 
 
 def launch_app(name):
@@ -442,11 +442,11 @@ try:
 
 except KeyboardInterrupt:
     print("\nCtrl+C detectado")
-    cleanup_and_exit()
+    cleanup_and_exit(0)
 
 except Exception as e:
     print(f"\nError en boot_menu: {e}")
-    cleanup_and_exit()
+    cleanup_and_exit(1)
 
 finally:
     # NO hacer GPIO.cleanup() - puede corromper I2C
