@@ -49,7 +49,12 @@ SCAN_SECONDS = 12
 BOOT_MENU = "/home/Javo/Proyects/boot_menu/boot_menu.py"
 
 # ~/.asoundrc pisa el default de /etc/asound.conf (AudioInjector); lo usamos
-# para que las apps que abren "default" salgan por el altavoz BT
+# para que las apps que abren "default" salgan por el altavoz BT.
+#
+# OJO: no apuntamos default directo a bluealsa porque PortAudio (sounddevice,
+# lo que usan las apps Python) no puede abrir ese PCM y el default desaparece
+# de su lista. En su lugar: default -> tarjeta Loopback (snd-aloop, hw real
+# que PortAudio sí ve) y un proceso alsaloop copia Loopback -> bluealsa.
 ASOUNDRC = "/home/Javo/.asoundrc"
 ASOUNDRC_MARK = "# generado por bt_menu"
 
@@ -69,16 +74,46 @@ def bt(args, timeout=10):
         return ""
 
 
+def _alsaloop_start():
+    """(Re)arranca el puente Loopback -> bluealsa"""
+    subprocess.run(["pkill", "-x", "alsaloop"], capture_output=True)
+    subprocess.Popen(
+        ["alsaloop", "-C", "hw:Loopback,1,0", "-P", "btspeaker", "-t", "100000"],
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=open('/tmp/alsaloop.log', 'w'),
+        stderr=subprocess.STDOUT
+    )
+    print("[alsaloop] puente Loopback -> BT arrancado")
+
+
+def _alsaloop_stop():
+    subprocess.run(["pkill", "-x", "alsaloop"], capture_output=True)
+
+
+def _alsaloop_corriendo():
+    return subprocess.run(["pgrep", "-x", "alsaloop"],
+                          capture_output=True).returncode == 0
+
+
 def activar_salida_bt(mac):
-    """Apunta el default de ALSA al altavoz BT"""
+    """Apunta el default de ALSA al Loopback y arranca el puente hacia el BT"""
     if os.path.exists(ASOUNDRC):
         with open(ASOUNDRC) as f:
             if ASOUNDRC_MARK not in f.read():
                 print("[asoundrc] existe un ~/.asoundrc ajeno, no lo toco")
                 return
     with open(ASOUNDRC, "w") as f:
-        f.write(f"""{ASOUNDRC_MARK} — salida por Bluetooth ({mac})
+        f.write(f"""{ASOUNDRC_MARK} — puente loopback -> Bluetooth ({mac})
 pcm.!default {{
+    type plug
+    slave.pcm "hw:Loopback,0,0"
+}}
+ctl.!default {{
+    type hw
+    card 1
+}}
+pcm.btspeaker {{
     type plug
     slave.pcm {{
         type bluealsa
@@ -86,16 +121,14 @@ pcm.!default {{
         profile "a2dp"
     }}
 }}
-ctl.!default {{
-    type hw
-    card 1
-}}
 """)
-    print(f"[asoundrc] salida default -> BT {mac}")
+    _alsaloop_start()
+    print(f"[asoundrc] salida default -> BT {mac} (via Loopback)")
 
 
 def desactivar_salida_bt():
     """Vuelve al default de /etc/asound.conf (AudioInjector)"""
+    _alsaloop_stop()
     try:
         with open(ASOUNDRC) as f:
             es_nuestro = ASOUNDRC_MARK in f.read()
@@ -116,17 +149,22 @@ def salida_bt_activa():
 
 
 def sincronizar_asoundrc():
-    """Si ~/.asoundrc apunta a un BT que ya no está conectado, lo quita"""
+    """Si ~/.asoundrc apunta a un BT que ya no está conectado, lo quita.
+    Si sigue conectado pero el puente alsaloop no corre (p.ej. tras reiniciar),
+    lo rearranca."""
     try:
         with open(ASOUNDRC) as f:
             contenido = f.read()
     except FileNotFoundError:
+        _alsaloop_stop()
         return
     if ASOUNDRC_MARK not in contenido:
         return
     m = MAC_RE.search(contenido)
     if not m or "Connected: yes" not in bt(["info", m.group(0)]):
         desactivar_salida_bt()
+    elif not _alsaloop_corriendo():
+        _alsaloop_start()
 
 
 def nombre_real(mac, name):
