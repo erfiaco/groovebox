@@ -1,0 +1,11 @@
+metronome_env/
+*.wav
+__pyache__/
+__pycache__/
+*.pyc
+*.pyco
+*.pyd
+*.pyo
+__pycache__/
+*.py[cod]
+*.pyc

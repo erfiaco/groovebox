@@ -1,0 +1,7 @@
+numpy
+sounddevice
+soundfile
+luma.oled
+pillow
+gpiozero
+lgpio
