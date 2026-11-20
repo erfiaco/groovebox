@@ -1,0 +1,8 @@
+{
+  "tempo": 160,
+  "compas": "3/4",
+  "cc_playback": 0,
+  "tot_cc": 144,
+  "intro":  [1,  8],
+  "tema":   [9,  144]
+}
