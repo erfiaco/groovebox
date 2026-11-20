@@ -1,0 +1,16 @@
+
+/loops/
+*.wav
+/looper_env/
+lg/
+Experimentos/
+__pyache__/
+*.pyc
+*.pyco
+*.pyd
+*.pyo
+__pycache__/
+# Archivos de cache de python
+__pycache__/
+*.py[cod]
+*.pyc
