@@ -1,0 +1,9 @@
+# Paquetes apt que usa la Groovebox (sacados de la Pi 3B+ el 2026-11-20)
+git python3-pip python3-venv
+alsa-utils libasound2-plugins libportaudio2 portaudio19-dev libsndfile1 ffmpeg
+rubberband-cli librubberband2 librubberband-dev soundstretch
+i2c-tools pigpio pigpiod python3-pigpio python3-gpiozero python3-smbus
+hostapd dnsmasq
+bluez bluez-firmware
+# Para compilar bluez-alsa (en la Pi 3B+ se compiló a mano en ~/bluez-alsa):
+libbluetooth-dev libdbus-1-dev libglib2.0-dev libsbc-dev

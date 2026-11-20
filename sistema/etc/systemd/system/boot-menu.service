@@ -1,0 +1,19 @@
+[Unit]
+Description=Boot Menu Looper
+After=pigpiod.service
+Wants=pigpiod.service
+
+[Service]
+Type=simple
+User=Javo
+WorkingDirectory=/home/Javo/Proyects/boot_menu
+ExecStart=/usr/bin/python3 /home/Javo/Proyects/boot_menu/boot_menu.py
+Restart=on-failure
+SuccessExitStatus=99
+RestartSec=5
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

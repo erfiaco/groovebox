@@ -1,0 +1,13 @@
+[Unit]
+Description=BluezALSA proxy
+Requires=bluetooth.service
+After=bluetooth.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sleep 2
+ExecStart=/usr/bin/bluealsad --profile=a2dp-sink --profile=a2dp-source
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

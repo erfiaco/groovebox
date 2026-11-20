@@ -1,0 +1,30 @@
+# Entornos virtuales (se regeneran con pip)
+*_env/
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Audio: va aparte, no en git (más de 1 GB)
+*.wav
+*.mp3
+*.flac
+Looper/loops/
+sync_looper/loops/
+practice_player/audio_files/
+backing_player/tracks/*
+!backing_player/tracks/*.json
+
+# Restos y editores
+Looper/lg/
+.idea/
+.vscode/
+*.log
+.lgd-nfy*
+
+# Nunca subir contraseñas
+wpa_supplicant.conf
+hostapd.conf
+.git-credentials
