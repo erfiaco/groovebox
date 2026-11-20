@@ -105,6 +105,13 @@ class Metronome:
         self.muted       = False
         self.beat_sounds = []  # lista de np.ndarray o None, uno por beat
 
+        # Stream continuo: silencio entre ticks, el callback mezcla el click.
+        # Imprescindible por Bluetooth: abrir/cerrar un stream por click (sd.play)
+        # no da tiempo a que el audio atraviese el encoder A2DP y no suena nada.
+        self._stream    = None
+        self._click     = None   # click en reproducción (np.ndarray) o None
+        self._click_pos = 0
+
         # Callback externo: fn(beat_in_bar: int, beats_per_bar: int)
         # Se llama desde el thread del metrónomo (no bloquear demasiado)
         self.on_beat = None
@@ -145,6 +152,13 @@ class Metronome:
         if self.is_playing:
             return
         self._stop_event.clear()
+        try:
+            self._stream = sd.OutputStream(samplerate=SAMPLE_RATE, channels=2,
+                                           callback=self._audio_callback)
+            self._stream.start()
+        except Exception as e:
+            print(f"[Metronome] stream continuo no disponible ({e}); usando sd.play")
+            self._stream = None
         self._thread = threading.Thread(target=self._run, daemon=True,
                                         name="metronome-beat")
         self.is_playing = True
@@ -157,10 +171,34 @@ class Metronome:
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=2.0)
+        self._click = None
+        if self._stream is not None:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
         try:
             sd.stop()
         except Exception:
             pass
+
+    # ── Callback del stream continuo ──────────────────────────────────────
+
+    def _audio_callback(self, outdata, frames, time_info, status):
+        outdata.fill(0)
+        snd = self._click
+        if snd is None:
+            return
+        pos = self._click_pos
+        n = min(frames, len(snd) - pos)
+        if n > 0:
+            outdata[:n, 0] = snd[pos:pos + n]
+            outdata[:n, 1] = snd[pos:pos + n]
+        self._click_pos = pos + n
+        if self._click_pos >= len(snd):
+            self._click = None
 
     # ── Thread de timing ──────────────────────────────────────────────────
 
@@ -191,10 +229,14 @@ class Metronome:
                 sound = self._accent if beat_in_bar == 1 else self._beat
 
             if not self.muted and sound is not None:
-                try:
-                    sd.play(sound, SAMPLE_RATE)
-                except Exception as e:
-                    print(f"[Metronome] sd.play error: {e}")
+                if self._stream is not None:
+                    self._click_pos = 0
+                    self._click = sound
+                else:
+                    try:
+                        sd.play(sound, SAMPLE_RATE)
+                    except Exception as e:
+                        print(f"[Metronome] sd.play error: {e}")
 
             # ── Callback al exterior ─────────────────────────────────
             if self.on_beat:

@@ -35,7 +35,29 @@ from buttons_manager import ButtonsManager
 from oled_display    import OledDisplay, BEAT_ACCENT, BEAT_NORMAL, BEAT_SILENCE, BEAT_NAMES
 
 # ── Audio device ──────────────────────────────────────────────────────────────
-sd.default.device = 0
+def _salida_es_bt():
+    """True si bt_menu dejó ~/.asoundrc apuntando al altavoz Bluetooth"""
+    try:
+        with open('/home/Javo/.asoundrc') as f:
+            return 'generado por bt_menu' in f.read()
+    except FileNotFoundError:
+        return False
+
+def _configurar_salida():
+    """Salida por el default de ALSA (cable, o Bluetooth si bt_menu escribió
+    ~/.asoundrc); si el default no se puede abrir, cae al AudioInjector."""
+    try:
+        sd.check_output_settings(device='default', channels=2)
+        sd.default.device = 'default'
+        if _salida_es_bt():
+            # BT necesita buffer grande o el audio sale entrecortado
+            sd.default.latency = 'high'
+            print("[audio] salida Bluetooth, latency=high")
+    except Exception as e:
+        print(f"[audio] default no disponible ({e}); usando AudioInjector")
+        sd.default.device = 'audioinjector'
+
+_configurar_salida()
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 DEFAULT_BPM        = 60
