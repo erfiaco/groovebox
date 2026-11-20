@@ -37,5 +37,6 @@ El audio (pistas, loops, audio_files) **no está en git**: se copia aparte desde
 
 Cada carpeta se importó desde la rama que corría en la Pi 3B+ el 2026-11-20 (las `wip/raspi-2026-11-20` incluyen cambios sin terminar).
 Problemas conocidos (ver el diagnóstico):
-- `sistema/etc/asound.conf` usa la tarjeta nº 1, que desde que se añadió snd-aloop es el HDMI. Se deja así a propósito: el cambio a `hw:audioinjectorpi` se probó en su día y dio problemas. Solo se tocará si da fallos.
+- `sistema/etc/asound.conf` usa la tarjeta nº 1, que desde que se añadió snd-aloop es el HDMI. De momento se deja así (ahora toca ordenar, no cambiar el funcionamiento). Mejora pendiente para cuando la Pi 4 esté montada: usar `hw:audioinjectorpi`; un intento anterior dio problemas que hay que investigar.
+- El boot_menu arranca por dos vías (servicio systemd y crontab), igual que en la Pi vieja. Con la Pi 4 montada se averiguará cuál funciona y se quitará la otra.
 - Cada programa tiene su propio `oled_display.py` y `buttons_manager.py` con su propio mapeo de pines. La idea es unificarlos en `comun/`.
