@@ -152,10 +152,11 @@ LINEA='@reboot sleep 10 && /usr/bin/python3 /home/Javo/Proyects/boot_menu/boot_m
 # ---------------------------------------------------------------- resumen
 paso "Hecho"
 echo "Falta, a mano:"
-echo "  1. Copiar el audio desde el PC (no está en git), por ejemplo:"
-echo "       rsync -a backup_raspi/Proyects/backing_player/tracks/   Javo@<ip>:Proyects/backing_player/tracks/"
-echo "       rsync -a backup_raspi/Proyects/practice_player/audio_files/ Javo@<ip>:Proyects/practice_player/audio_files/"
-echo "       rsync -a backup_raspi/Proyects/Looper/loops/           Javo@<ip>:Proyects/Looper/loops/"
+echo "  1. Copiar el audio desde el PC (no está en git). Desde Proyectos/Groovebox, sin los WAV con nombre automático:"
+echo "       X=\"--exclude=loop_*_*.wav --exclude=bt_recording_*.wav --exclude=[0-9][0-9][0-9][0-9].wav --exclude=/Django-MS_GuitSolo.wav --exclude=/fade-*.wav --exclude=/micro-fade-*.wav\""
+echo "       rsync -a \$X backup_raspi/Proyects/backing_player/tracks/      Javo@<ip>:Proyects/backing_player/tracks/"
+echo "       rsync -a \$X backup_raspi/Proyects/practice_player/audio_files/ Javo@<ip>:Proyects/practice_player/audio_files/"
+echo "       rsync -a \$X backup_raspi/Proyects/Looper/loops/              Javo@<ip>:Proyects/Looper/loops/"
 echo "  2. Reiniciar: sudo reboot"
 echo "  3. Comprobar: aplay -l (AudioInjector), i2cdetect -y 1 (OLED en 0x3C)"
 if [ ${#AVISOS[@]} -gt 0 ]; then
