@@ -22,16 +22,20 @@ Un solo repo con todos los programas. Antes cada uno tenía su propio repo; esos
 
 Las carpetas tienen los mismos nombres que en la raspi, así que basta con clonar el repo en `~/Proyects`:
 
+Con una Pi recién instalada (Raspberry Pi OS **Bullseye** 64 bits, usuario **Javo**, wifi y SSH ya configurados):
+
 ```
 git clone https://github.com/erfiaco/groovebox.git ~/Proyects
+bash ~/Proyects/sistema/install.sh
 ```
 
-Los entornos de Python y el audio (pistas, loops, audio_files) **no están en git**. El audio se copia aparte desde la copia de seguridad.
-Pendiente: `sistema/install.sh`, que instalará paquetes, configs y servicios.
+`install.sh` instala los paquetes, configura el AudioInjector, I2C, ALSA y el hotspot, compila lg y bluez-alsa, crea los entornos de Python, clona raspi-looper y deja el boot_menu arrancando solo. Se puede volver a ejecutar sin problema.
+
+El audio (pistas, loops, audio_files) **no está en git**: se copia aparte desde la copia de seguridad (el script dice cómo al terminar).
 
 ## Estado
 
 Cada carpeta se importó desde la rama que corría en la Pi 3B+ el 2026-11-20 (las `wip/raspi-2026-11-20` incluyen cambios sin terminar).
 Problemas conocidos (ver el diagnóstico):
-- `sistema/etc/asound.conf` usa la tarjeta nº 1, que desde que se añadió snd-aloop es el HDMI. Hay que pasar a `hw:audioinjectorpi`.
+- `sistema/etc/asound.conf` usa la tarjeta nº 1, que desde que se añadió snd-aloop es el HDMI. Se deja así a propósito: el cambio a `hw:audioinjectorpi` se probó en su día y dio problemas. Solo se tocará si da fallos.
 - Cada programa tiene su propio `oled_display.py` y `buttons_manager.py` con su propio mapeo de pines. La idea es unificarlos en `comun/`.

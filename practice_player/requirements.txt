@@ -1,0 +1,20 @@
+# Congelado del entorno practice_env de la Pi 3B+ (Python 3.9) el 2026-11-20
+cbor2==5.8.0
+cffi==2.0.0
+colorzero==2.0
+gpiozero==2.0.1
+importlib-metadata==4.13.0
+importlib-resources==5.13.0
+lgpio==0.2.2.0
+luma-core==2.5.3
+luma.oled==3.14.0
+numpy==2.0.2
+pillow==11.3.0
+pycparser==2.23
+pyrubberband==0.4.0
+RPi.GPIO==0.7.1
+scipy==1.13.1
+smbus2==0.6.0
+sounddevice==0.5.3
+soundfile==0.13.1
+zipp==3.23.0

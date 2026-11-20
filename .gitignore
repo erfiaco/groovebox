@@ -17,6 +17,9 @@ practice_player/audio_files/
 backing_player/tracks/*
 !backing_player/tracks/*.json
 
+# raspi-looper va en su propio repo (lo clona install.sh)
+raspi-looper/
+
 # Restos y editores
 Looper/lg/
 .idea/

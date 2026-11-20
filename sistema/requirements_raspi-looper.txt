@@ -1,0 +1,15 @@
+# Congelado de raspi-looper/rlooper_env de la Pi 3B+ el 2026-11-20 (raspi-looper va en su propio repo)
+cbor2==5.9.0
+colorzero==2.0
+gpiozero==2.0.1
+importlib-metadata==4.13.0
+importlib-resources==5.13.0
+lgpio==0.2.2.0
+luma-core==2.5.3
+luma-oled==3.15.0
+numpy==1.26.4
+pillow==11.3.0
+pyaudio==0.2.14
+RPi.GPIO==0.7.1
+smbus2==0.6.0
+zipp==3.23.0
